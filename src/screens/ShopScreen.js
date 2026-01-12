@@ -8,17 +8,19 @@ import {
     FlatList,
     SafeAreaView,
     Image,
+    Platform,
+    StatusBar
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 const STORES = [
     { id: '1', name: 'Amazon', url: 'https://www.amazon.com/?language=es_US', logo: require('../../assets/amazon_logo.png'), color: '#FF9900' },
-    { id: '2', name: 'AliExpress', url: 'https://www.aliexpress.us', logo: 'https://logo.clearbit.com/aliexpress.com', color: '#FF4747' },
-    { id: '3', name: 'Newegg', url: 'https://www.newegg.com', logo: 'https://logo.clearbit.com/newegg.com', color: '#FFA300' },
-    { id: '4', name: 'Nike USA', url: 'https://www.nike.com/us/es/', logo: require('../../assets/nike_logo.png'), color: '#000' },
-    { id: '5', name: 'TEMU USA', url: 'https://www.temu.com/us', logo: 'https://logo.clearbit.com/temu.com', color: '#FB7701' },
+    { id: '2', name: 'AliExpress', url: 'https://www.aliexpress.us', logo: require('../../assets/aliexpress_logo.png'), color: '#FF4747' },
+    // { id: '3', name: 'Newegg', url: 'https://www.newegg.com', logo: require('../../assets/newegg_logo.png'), color: '#FFA300' },
+    // { id: '4', name: 'Nike USA', url: 'https://www.nike.com/us/es/', logo: require('../../assets/nike_logo.png'), color: '#000' }, // Temporarily hidden
+    { id: '5', name: 'TEMU USA', url: 'https://www.temu.com/us', logo: require('../../assets/temu_logo.png'), color: '#FB7701' },
     { id: '6', name: 'SHEIN USA', url: 'https://us.shein.com', logo: require('../../assets/shein_logo.png'), color: '#000' },
-    { id: '7', name: 'Walmart', url: 'https://www.walmart.com', logo: 'https://logo.clearbit.com/walmart.com', color: '#0071DC' },
+    { id: '7', name: 'Walmart', url: 'https://www.walmart.com', logo: require('../../assets/walmart_logo.png'), color: '#0071DC' },
     // Add more stores as needed
 ];
 
@@ -36,7 +38,8 @@ const ShopScreen = ({ navigation }) => {
                     source={typeof item.logo === 'string' ? { uri: item.logo } : item.logo}
                     style={[
                         styles.storeLogo,
-                        item.name === 'Amazon' && { width: 65, height: 65, backgroundColor: 'white', borderRadius: 32.5 }
+                        item.name === 'Amazon' && { width: 65, height: 65, backgroundColor: 'white', borderRadius: 32.5 },
+                        item.name === 'Walmart' && { width: 65, height: 65, backgroundColor: 'white', borderRadius: 32.5 }
                     ]}
                     resizeMode="contain"
                 />
@@ -56,7 +59,7 @@ const ShopScreen = ({ navigation }) => {
             </View>
 
             <View style={styles.searchContainer}>
-                <TextInput style={styles.searchInput} placeholder="Search stores" />
+                <TextInput style={styles.searchInput} placeholder="Buscar tiendas" placeholderTextColor="#999" />
                 <Ionicons name="search" size={24} color="#666" style={styles.searchIcon} />
             </View>
 
@@ -81,10 +84,12 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         alignItems: 'center',
         padding: 20,
+        paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 24) + 10 : 20,
     },
     headerTitle: {
         fontSize: 20,
         fontWeight: 'bold',
+        color: '#333',
     },
     searchContainer: {
         flexDirection: 'row',
@@ -98,6 +103,7 @@ const styles = StyleSheet.create({
     searchInput: {
         flex: 1,
         paddingVertical: 15,
+        color: '#333',
     },
     searchIcon: {
         marginLeft: 10,

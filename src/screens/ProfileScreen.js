@@ -8,31 +8,68 @@ import {
     ScrollView,
     SafeAreaView,
     Image,
+    Linking,
+    Platform,
+    StatusBar,
+    Alert
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
+import { useAuth } from '../context/AuthContext';
 
 const ProfileScreen = () => {
-    const [isDarkMode, setIsDarkMode] = useState(false);
+    const navigation = useNavigation();
+    const { user, signOut } = useAuth();
 
-    const toggleSwitch = () => setIsDarkMode((previousState) => !previousState);
+    // Hardcoded light theme since dark mode is removed
+    const theme = {
+        background: '#fff',
+        text: '#000',
+        subText: '#666',
+        headerIcon: 'black',
+        menuIcon: '#666',
+        border: '#f0f0f0',
+    };
 
-    const renderMenuItem = (icon, title, hasArrow = true) => (
-        <TouchableOpacity style={styles.menuItem}>
+    const handleLogout = async () => {
+        Alert.alert(
+            "Cerrar Sesión",
+            "¿Estás seguro que quieres salir?",
+            [
+                { text: "Cancelar", style: "cancel" },
+                {
+                    text: "Salir",
+                    style: "destructive",
+                    onPress: async () => {
+                        try {
+                            await signOut();
+                            // Optional: Navigate to home or stay on profile
+                        } catch (error) {
+                            console.error("Error signing out:", error);
+                        }
+                    }
+                }
+            ]
+        );
+    };
+
+    const renderMenuItem = (icon, title, onPress, hasArrow = true) => (
+        <TouchableOpacity style={[styles.menuItem, { borderBottomColor: theme.border }]} onPress={onPress}>
             <View style={styles.menuItemLeft}>
-                <Ionicons name={icon} size={24} color="#666" style={styles.menuIcon} />
-                <Text style={styles.menuText}>{title}</Text>
+                <Ionicons name={icon} size={24} color={theme.menuIcon} style={styles.menuIcon} />
+                <Text style={[styles.menuText, { color: theme.text }]}>{title}</Text>
             </View>
-            {hasArrow && <Ionicons name="chevron-forward" size={24} color="#ccc" />}
+            {hasArrow && <Ionicons name="chevron-forward" size={24} color={theme.subText} />}
         </TouchableOpacity>
     );
 
     return (
-        <SafeAreaView style={styles.container}>
+        <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
             <View style={styles.header}>
-                <TouchableOpacity>
-                    <Ionicons name="arrow-back" size={24} color="black" />
+                <TouchableOpacity onPress={() => navigation.goBack()}>
+                    <Ionicons name="arrow-back" size={24} color={theme.headerIcon} />
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>Profile</Text>
+                <Text style={[styles.headerTitle, { color: theme.text }]}>Perfil</Text>
                 <View style={{ width: 24 }} />
             </View>
 
@@ -43,40 +80,51 @@ const ProfileScreen = () => {
                         style={styles.profileLogo}
                         resizeMode="contain"
                     />
-                    <Text style={styles.profileName}>MAMA SAN</Text>
-                    <Text style={styles.profileEmail}>info@mamasan.com</Text>
+                    {user ? (
+                        <>
+                            <Text style={[styles.profileName, { color: theme.text }]}>
+                                {user.user_metadata?.full_name || user.email?.split('@')[0] || 'Usuario'}
+                            </Text>
+                            <Text style={[styles.profileEmail, { color: theme.subText }]}>{user.email}</Text>
+                        </>
+                    ) : (
+                        <>
+                            <Text style={[styles.profileName, { color: theme.text }]}>MAMA SAN</Text>
+                            <Text style={[styles.profileEmail, { color: theme.subText }]}>Invitado</Text>
+                        </>
+                    )}
                 </View>
 
-                <Text style={styles.sectionTitle}>Support</Text>
-                {renderMenuItem('settings-outline', 'How it works')}
-                {renderMenuItem('people-outline', 'Affiliates and Referrals')}
-                {renderMenuItem('help-circle-outline', 'FAQs')}
+                <Text style={[styles.sectionTitle, { color: theme.text }]}>Soporte</Text>
+                {renderMenuItem('settings-outline', 'Cómo funciona', () => navigation.navigate('HowItWorks'))}
+                {renderMenuItem('help-circle-outline', 'Preguntas Frecuentes', () => { })}
 
-                <Text style={styles.sectionTitle}>About MAMA SAN</Text>
-                {renderMenuItem('information-circle-outline', 'About Us')}
-                {renderMenuItem('document-text-outline', 'Terms & Conditions')}
-                {renderMenuItem('people-outline', 'Contact')}
-                {renderMenuItem('newspaper-outline', 'Visit our Blog')}
+                <Text style={[styles.sectionTitle, { color: theme.text }]}>Sobre MAMA SAN</Text>
+                {renderMenuItem('information-circle-outline', 'Sobre Nosotros', () => { })}
+                {renderMenuItem('document-text-outline', 'Términos y Condiciones', () => navigation.navigate('Terms'))}
 
-                <View style={styles.darkModeContainer}>
-                    <View style={styles.menuItemLeft}>
-                        <Ionicons name="sunny-outline" size={24} color="#666" style={styles.menuIcon} />
-                        <Text style={styles.menuText}>Enable Dark Mode</Text>
-                    </View>
-                    <Switch
-                        trackColor={{ false: '#767577', true: '#FF007F' }}
-                        thumbColor={isDarkMode ? '#f5dd4b' : '#f4f3f4'}
-                        ios_backgroundColor="#3e3e3e"
-                        onValueChange={toggleSwitch}
-                        value={isDarkMode}
-                    />
+                <Text style={[styles.sectionTitle, { color: theme.text }]}>Síguenos</Text>
+                <View style={styles.socialContainer}>
+                    <TouchableOpacity style={styles.socialButton} onPress={() => Linking.openURL('https://www.instagram.com/mamasan.app/')}>
+                        <Ionicons name="logo-instagram" size={32} color="#E1306C" />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.socialButton} onPress={() => Linking.openURL('https://www.tiktok.com/@mamasan.app?lang=es')}>
+                        <Ionicons name="logo-tiktok" size={32} color="#000000" />
+                    </TouchableOpacity>
                 </View>
+                <Text style={[styles.supportEmail, { color: theme.subText }]}>info@mamasan.app</Text>
 
-                <TouchableOpacity style={styles.loginButton}>
-                    <Text style={styles.loginButtonText}>Login</Text>
-                </TouchableOpacity>
-            </ScrollView>
-        </SafeAreaView>
+                {user ? (
+                    <TouchableOpacity style={[styles.loginButton, styles.logoutButton]} onPress={handleLogout}>
+                        <Text style={styles.loginButtonText}>Cerrar Sesión</Text>
+                    </TouchableOpacity>
+                ) : (
+                    <TouchableOpacity style={styles.loginButton} onPress={() => navigation.navigate('Login')}>
+                        <Text style={styles.loginButtonText}>Iniciar Sesión</Text>
+                    </TouchableOpacity>
+                )}
+            </ScrollView >
+        </SafeAreaView >
     );
 };
 
@@ -90,6 +138,7 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         alignItems: 'center',
         padding: 20,
+        paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 24) + 10 : 20,
     },
     headerTitle: {
         fontSize: 20,
@@ -152,10 +201,29 @@ const styles = StyleSheet.create({
         borderRadius: 10,
         alignItems: 'center',
     },
+    logoutButton: {
+        backgroundColor: '#DC2626', // Red for logout
+        marginTop: 20,
+    },
     loginButtonText: {
         color: 'white',
         fontSize: 16,
         fontWeight: 'bold',
+    },
+    socialContainer: {
+        flexDirection: 'row',
+        marginTop: 10,
+        marginBottom: 20,
+        paddingLeft: 10,
+    },
+    socialButton: {
+        marginRight: 20,
+    },
+    supportEmail: {
+        fontSize: 16,
+        color: '#666',
+        marginLeft: 10,
+        marginBottom: 20,
     },
 });
 

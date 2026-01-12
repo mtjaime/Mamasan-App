@@ -1,50 +1,74 @@
 import React from 'react';
-import { Modal, View, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { Modal, View, Text, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 const { width } = Dimensions.get('window');
 
-const CustomAlert = ({ visible, title, message, onCancel, onConfirm, cancelText, confirmText, icon }) => {
+const CustomAlert = ({ visible, title, message, buttons = [], onClose, type = 'warning' }) => {
+    if (!visible) return null;
+
+    // Default button if none provided
+    const actionButtons = buttons.length > 0 ? buttons : [
+        { text: 'OK', onPress: onClose, style: 'default' }
+    ];
+
+    const getIconConfig = () => {
+        switch (type) {
+            case 'danger':
+                return { name: "trash-outline", color: "#FF0000", style: styles.dangerIcon };
+            case 'success':
+                return { name: "checkmark-circle-outline", color: "#4CD964", style: styles.successIcon };
+            case 'sad':
+                return { name: "sad-outline", color: "#FF007F", style: styles.warningIcon };
+            default:
+                return { name: "alert-outline", color: "#FF007F", style: styles.warningIcon };
+        }
+    };
+
+    const iconConfig = getIconConfig();
+
     return (
         <Modal
             transparent={true}
             visible={visible}
             animationType="fade"
-            onRequestClose={onCancel}
+            onRequestClose={onClose}
         >
             <View style={styles.overlay}>
                 <View style={styles.alertContainer}>
-                    <LinearGradient
-                        colors={['#FF007F', '#7B1FA2']}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 0 }}
-                        style={styles.header}
-                    >
-                        <Ionicons name={icon || "checkmark-circle"} size={40} color="white" />
-                        <Text style={styles.headerTitle}>{title}</Text>
-                    </LinearGradient>
-
-                    <View style={styles.content}>
-                        <Text style={styles.message}>{message}</Text>
+                    <View style={[styles.iconContainer, iconConfig.style]}>
+                        <Ionicons
+                            name={iconConfig.name}
+                            size={32}
+                            color={iconConfig.color}
+                        />
                     </View>
 
-                    <View style={styles.footer}>
-                        {onCancel && (
-                            <TouchableOpacity style={styles.cancelButton} onPress={onCancel}>
-                                <Text style={styles.cancelText}>{cancelText || 'Cancel'}</Text>
-                            </TouchableOpacity>
-                        )}
-                        <TouchableOpacity style={styles.confirmButton} onPress={onConfirm}>
-                            <LinearGradient
-                                colors={['#FF007F', '#7B1FA2']}
-                                start={{ x: 0, y: 0 }}
-                                end={{ x: 1, y: 0 }}
-                                style={styles.gradientButton}
+                    {title && <Text style={styles.title}>{title}</Text>}
+                    {message && <Text style={styles.message}>{message}</Text>}
+
+                    <View style={styles.buttonContainer}>
+                        {actionButtons.map((btn, index) => (
+                            <TouchableOpacity
+                                key={index}
+                                style={[
+                                    styles.button,
+                                    btn.style === 'cancel' ? styles.cancelButton : (btn.style === 'destructive' ? styles.dangerButton : styles.defaultButton),
+                                    actionButtons.length > 1 ? { flex: 1, marginHorizontal: 6 } : { paddingHorizontal: 40 }
+                                ]}
+                                onPress={() => {
+                                    if (btn.onPress) btn.onPress();
+                                    if (!btn.preventClose) onClose();
+                                }}
                             >
-                                <Text style={styles.confirmText}>{confirmText || 'OK'}</Text>
-                            </LinearGradient>
-                        </TouchableOpacity>
+                                <Text style={[
+                                    styles.buttonText,
+                                    btn.style === 'cancel' ? styles.cancelButtonText : styles.defaultButtonText
+                                ]}>
+                                    {btn.text}
+                                </Text>
+                            </TouchableOpacity>
+                        ))}
                     </View>
                 </View>
             </View>
@@ -55,75 +79,99 @@ const CustomAlert = ({ visible, title, message, onCancel, onConfirm, cancelText,
 const styles = StyleSheet.create({
     overlay: {
         flex: 1,
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        backgroundColor: 'rgba(0, 0, 0, 0.6)',
         justifyContent: 'center',
         alignItems: 'center',
     },
     alertContainer: {
         width: width * 0.85,
         backgroundColor: 'white',
-        borderRadius: 20,
-        overflow: 'hidden',
-        elevation: 5,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.25,
-        shadowRadius: 3.84,
-    },
-    header: {
-        padding: 20,
+        borderRadius: 24,
+        padding: 24,
         alignItems: 'center',
-        justifyContent: 'center',
+        shadowColor: "#000",
+        shadowOffset: {
+            width: 0,
+            height: 4,
+        },
+        shadowOpacity: 0.3,
+        shadowRadius: 4.65,
+        elevation: 8,
     },
-    headerTitle: {
-        color: 'white',
+    iconContainer: {
+        width: 64,
+        height: 64,
+        borderRadius: 32,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 16,
+    },
+    warningIcon: {
+        backgroundColor: '#FFF0F5', // Light pink
+    },
+    dangerIcon: {
+        backgroundColor: '#FFEBEE', // Light red
+    },
+    successIcon: {
+        backgroundColor: '#E8F5E9', // Light green
+    },
+    title: {
         fontSize: 20,
         fontWeight: 'bold',
-        marginTop: 10,
+        color: '#FF007F', // Mamá SAN Pink
+        marginBottom: 8,
         textAlign: 'center',
-    },
-    content: {
-        padding: 20,
-        alignItems: 'center',
     },
     message: {
         fontSize: 16,
-        color: '#333',
-        textAlign: 'center',
-        lineHeight: 22,
-    },
-    footer: {
-        flexDirection: 'row',
-        padding: 15,
-        justifyContent: 'center',
-    },
-    cancelButton: {
-        paddingVertical: 10,
-        paddingHorizontal: 20,
-        marginRight: 10,
-        borderRadius: 25,
-        borderWidth: 1,
-        borderColor: '#ccc',
-    },
-    cancelText: {
         color: '#666',
-        fontSize: 16,
-        fontWeight: '600',
+        textAlign: 'center',
+        marginBottom: 24,
+        lineHeight: 22,
+        paddingHorizontal: 10,
     },
-    confirmButton: {
-        borderRadius: 25,
-        overflow: 'hidden',
+    buttonContainer: {
+        flexDirection: 'row',
+        justifyContent: 'center',
+        width: '100%',
+        marginTop: 8,
     },
-    gradientButton: {
-        paddingVertical: 12,
-        paddingHorizontal: 30,
+    button: {
+        paddingVertical: 14,
+        borderRadius: 14,
         alignItems: 'center',
         justifyContent: 'center',
     },
-    confirmText: {
+    defaultButton: {
+        backgroundColor: '#FF007F', // Mamá SAN Pink
+        shadowColor: "#FF007F",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.3,
+        shadowRadius: 3,
+        elevation: 3,
+    },
+    dangerButton: {
+        backgroundColor: '#FF3B30', // Red
+        shadowColor: "#FF3B30",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.3,
+        shadowRadius: 3,
+        elevation: 3,
+    },
+    cancelButton: {
+        backgroundColor: 'transparent',
+        borderWidth: 1.5,
+        borderColor: '#E5E5EA',
+    },
+    defaultButtonText: {
         color: 'white',
         fontSize: 16,
-        fontWeight: 'bold',
+        fontWeight: '700',
+    },
+    cancelButtonText: {
+        color: '#8E8E93',
+        fontSize: 16,
+        fontWeight: '600',
     },
 });
 

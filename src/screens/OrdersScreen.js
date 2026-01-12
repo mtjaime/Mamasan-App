@@ -1,538 +1,902 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
     View,
     Text,
     StyleSheet,
-    ScrollView,
+    FlatList,
     TouchableOpacity,
-    SafeAreaView,
-    LayoutAnimation,
+    ActivityIndicator,
+    RefreshControl,
+    StatusBar,
     Platform,
-    UIManager
+    Modal,
 } from 'react-native';
-import { Feather, Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useFocusEffect } from '@react-navigation/native';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { useAuth } from '../context/AuthContext';
+import { api } from '../services/api';
 
-// Enable LayoutAnimation on Android
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-    UIManager.setLayoutAnimationEnabledExperimental(true);
-}
+const ESTADOS_FILTER = [
+    { key: null, label: 'Todos' },
+    { key: 'validacion', label: 'En revisión' },
+    { key: 'en proceso', label: 'Por entregar' },
+    { key: 'completado', label: 'Entregados' },
+    { key: 'cancelada', label: 'Cancelados' },
+];
 
-const OrdersScreen = () => {
-    // Datos simulados de la orden con estructura financiera
-    const orderDetails = {
-        id: "MS-8823",
-        product: "Zapatos Nike Air Force 1",
-        store: "Amazon",
-        totalPrice: 120.00,
-        paidAmount: 68.00, // Inicial + 1 cuota
-        remainingAmount: 52.00,
-        status: "in_transit", // pending, processing, in_transit, delivered
-        installments: [
-            { id: 1, name: "Pago Inicial", amount: 48.00, dueDate: "25 Nov", status: "paid" },
-            { id: 2, name: "Cuota 1", amount: 20.00, dueDate: "10 Dic", status: "paid" },
-            { id: 3, name: "Cuota 2", amount: 18.00, dueDate: "25 Dic", status: "pending" }, // Próxima
-            { id: 4, name: "Cuota 3", amount: 18.00, dueDate: "10 Ene", status: "locked" },
-            { id: 5, name: "Cuota 4", amount: 16.00, dueDate: "25 Ene", status: "locked" },
-        ],
-        trackingSteps: [
-            { title: 'Pago Inicial', date: '25 Nov', completed: true },
-            { title: 'Comprado', date: '26 Nov', completed: true },
-            { title: 'Miami', date: '28 Nov', completed: true },
-            { title: 'En tránsito', date: 'Est: 05 Dic', completed: false, current: true },
-            { title: 'Entregado', date: '---', completed: false },
-        ]
+const FECHA_FILTER = [
+    { key: 'today', label: 'Hoy', days: 0 },
+    { key: '7', label: 'Esta Semana', days: 7 },
+    { key: '30', label: 'Este Mes', days: 30 },
+    { key: '90', label: 'Últimos 3 Meses', days: 90 },
+    { key: 'custom', label: 'Personalizado', days: null },
+];
+
+const OrdersScreen = ({ navigation }) => {
+    const { user } = useAuth();
+    const [orders, setOrders] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
+    const [loadingMore, setLoadingMore] = useState(false);
+    const [selectedFilter, setSelectedFilter] = useState(null);
+    const [selectedDateFilter, setSelectedDateFilter] = useState(null);
+    const [showDateModal, setShowDateModal] = useState(false);
+    const [customStartDate, setCustomStartDate] = useState(null);
+    const [customEndDate, setCustomEndDate] = useState(null);
+    const [showStartPicker, setShowStartPicker] = useState(false);
+    const [showEndPicker, setShowEndPicker] = useState(false);
+    const [page, setPage] = useState(1);
+    const [hasMore, setHasMore] = useState(true);
+    const [meta, setMeta] = useState(null);
+
+    const fetchOrders = async (pageNum = 1, estado = selectedFilter, dateFilter = selectedDateFilter, isRefresh = false) => {
+        try {
+            if (pageNum === 1) {
+                if (!isRefresh) setLoading(true);
+            } else {
+                setLoadingMore(true);
+            }
+
+            const response = await api.getOrders(pageNum, 20, estado);
+
+            if (response.success) {
+                let newOrders = response.data?.orders || [];
+
+                // Filter by date if dateFilter is set
+                if (dateFilter && dateFilter !== null) {
+                    if (dateFilter === 'custom' && customStartDate && customEndDate) {
+                        // Custom date range
+                        const startDate = new Date(customStartDate);
+                        startDate.setHours(0, 0, 0, 0);
+                        const endDate = new Date(customEndDate);
+                        endDate.setHours(23, 59, 59, 999);
+                        newOrders = newOrders.filter(order => {
+                            const orderDate = new Date(order.fecha_creacion);
+                            return orderDate >= startDate && orderDate <= endDate;
+                        });
+                    } else if (dateFilter === 'today') {
+                        // Today filter
+                        const today = new Date();
+                        today.setHours(0, 0, 0, 0);
+                        const tomorrow = new Date(today);
+                        tomorrow.setDate(tomorrow.getDate() + 1);
+                        newOrders = newOrders.filter(order => {
+                            const orderDate = new Date(order.fecha_creacion);
+                            return orderDate >= today && orderDate < tomorrow;
+                        });
+                    } else {
+                        const filterDays = FECHA_FILTER.find(f => f.key === dateFilter)?.days;
+                        if (filterDays && filterDays > 0) {
+                            const cutoffDate = new Date();
+                            cutoffDate.setDate(cutoffDate.getDate() - filterDays);
+                            cutoffDate.setHours(0, 0, 0, 0);
+                            newOrders = newOrders.filter(order => {
+                                const orderDate = new Date(order.fecha_creacion);
+                                return orderDate >= cutoffDate;
+                            });
+                        }
+                    }
+                }
+
+                // Sort by id_venta descending (highest order number first)
+                newOrders = newOrders.sort((a, b) => b.id_venta - a.id_venta);
+
+                if (pageNum === 1) {
+                    setOrders(newOrders);
+                } else {
+                    setOrders(prev => [...prev, ...newOrders]);
+                }
+
+                setMeta(response.meta);
+                setHasMore(pageNum < (response.meta?.totalPages || 1));
+                setPage(pageNum);
+            } else {
+                console.error('Error fetching orders:', response.error);
+            }
+        } catch (error) {
+            console.error('Error fetching orders:', error);
+        } finally {
+            setLoading(false);
+            setRefreshing(false);
+            setLoadingMore(false);
+        }
     };
 
-    const [expandedOrder, setExpandedOrder] = useState(true);
+    useFocusEffect(
+        useCallback(() => {
+            fetchOrders(1, selectedFilter, selectedDateFilter, false);
+        }, [selectedFilter, selectedDateFilter])
+    );
 
-    const toggleExpand = () => {
-        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-        setExpandedOrder(!expandedOrder);
+    const onRefresh = () => {
+        setRefreshing(true);
+        fetchOrders(1, selectedFilter, selectedDateFilter, true);
     };
+
+    const loadMore = () => {
+        if (!loadingMore && hasMore && !loading) {
+            fetchOrders(page + 1, selectedFilter, selectedDateFilter, false);
+        }
+    };
+
+    const onFilterChange = (filter) => {
+        setSelectedFilter(filter);
+        setPage(1);
+        setOrders([]);
+        setLoading(true);
+    };
+
+    const onDateFilterChange = (filter) => {
+        setSelectedDateFilter(filter);
+        setPage(1);
+        setOrders([]);
+        setLoading(true);
+    };
+
+    const formatCurrency = (amount) => {
+        return new Intl.NumberFormat('es-VE', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        }).format(amount || 0);
+    };
+
+    const formatDate = (dateString) => {
+        if (!dateString) return '';
+        const date = new Date(dateString);
+        return date.toLocaleDateString('es-VE', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric'
+        });
+    };
+
+    // Get gradient colors for status
+    const getStatusGradient = (status) => {
+        switch (status?.toLowerCase()) {
+            case 'entregado':
+            case 'completado':
+                return ['#4CAF50', '#66BB6A']; // Green gradient
+            case 'orden confirmada':
+            case 'en proceso':
+            case 'por entregar':
+                return ['#FF007F', '#FF5C8D']; // Fucsia gradient
+            case 'pago en revisión':
+            case 'verificación adicional':
+            case 'validacion':
+            case 'validacion_secundaria':
+                return ['#7B1FA2', '#9C27B0']; // Purple gradient
+            case 'pago rechazado':
+            case 'cancelada':
+            case 'cancelada por mora':
+            case 'rechazado':
+            case 'cancelado por mora':
+                return ['#9E9E9E', '#BDBDBD']; // Gray gradient for canceled
+            default:
+                return ['#9E9E9E', '#BDBDBD']; // Gray gradient
+        }
+    };
+
+    const navigateToDetail = (orderId) => {
+        navigation.navigate('OrderDetail', { orderId });
+    };
+
+    // Transform status display text
+    const getDisplayStatus = (status) => {
+        if (status?.toLowerCase() === 'orden confirmada') {
+            return 'Por entregar';
+        }
+        return status;
+    };
+
+    const renderFilterItem = ({ item }) => (
+        <TouchableOpacity
+            style={[
+                styles.filterChip,
+                selectedFilter === item.key && styles.filterChipActive
+            ]}
+            onPress={() => onFilterChange(item.key)}
+        >
+            <Text style={[
+                styles.filterChipText,
+                selectedFilter === item.key && styles.filterChipTextActive
+            ]}>
+                {item.label}
+            </Text>
+        </TouchableOpacity>
+    );
+
+    const renderOrderItem = ({ item }) => (
+        <TouchableOpacity
+            style={styles.orderCard}
+            onPress={() => navigateToDetail(item.id_venta)}
+            activeOpacity={0.7}
+        >
+            <View style={styles.orderHeader}>
+                <Text style={styles.orderId}>Orden #{item.id_venta}</Text>
+                <LinearGradient
+                    colors={getStatusGradient(item.estado_display)}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.statusBadge}
+                >
+                    <Text style={styles.statusText}>{getDisplayStatus(item.estado_display)}</Text>
+                </LinearGradient>
+            </View>
+            <View style={styles.orderDetails}>
+                <View style={styles.orderInfoRow}>
+                    <Ionicons name="calendar-outline" size={14} color="#757575" />
+                    <Text style={styles.orderInfoText}>{formatDate(item.fecha_creacion)}</Text>
+                </View>
+                <Text style={styles.orderTotal}>${formatCurrency(item.monto_total_venta)}</Text>
+            </View>
+            <View style={styles.orderFooter}>
+                <View style={styles.orderInfoRow}>
+                    <Ionicons name="cube-outline" size={14} color="#757575" />
+                    <Text style={styles.orderInfoText}>{item.numero_articulos} artículo(s)</Text>
+                </View>
+                {item.numero_cuotas > 0 && (
+                    <View style={styles.orderInfoRow}>
+                        <Ionicons name="card-outline" size={14} color="#757575" />
+                        <Text style={styles.orderInfoText}>{item.numero_cuotas} cuotas</Text>
+                    </View>
+                )}
+                <Ionicons name="chevron-forward" size={20} color="#BDBDBD" />
+            </View>
+        </TouchableOpacity>
+    );
+
+    const renderEmptyList = () => (
+        <View style={styles.emptyContainer}>
+            <Ionicons name="receipt-outline" size={80} color="#E0E0E0" />
+            <Text style={styles.emptyTitle}>
+                {selectedFilter ? 'No hay pedidos con este filtro' : 'No tienes pedidos aún'}
+            </Text>
+            <Text style={styles.emptySubtitle}>
+                {selectedFilter
+                    ? 'Intenta con otro filtro o visualiza todos los pedidos'
+                    : 'Cuando realices una compra, tus pedidos aparecerán aquí'
+                }
+            </Text>
+            {!selectedFilter && (
+                <TouchableOpacity
+                    style={styles.shopButton}
+                    onPress={() => navigation.navigate('Shop')}
+                >
+                    <Text style={styles.shopButtonText}>Ir a comprar</Text>
+                </TouchableOpacity>
+            )}
+        </View>
+    );
+
+    const renderFooter = () => {
+        if (!loadingMore) return null;
+        return (
+            <View style={styles.footerLoader}>
+                <ActivityIndicator size="small" color="#E91E63" />
+            </View>
+        );
+    };
+
+    if (loading && !refreshing) {
+        return (
+            <View style={styles.container}>
+                <View style={styles.header}>
+                    <Text style={styles.headerTitle}>Mis Pedidos</Text>
+                </View>
+                <View style={styles.loadingContainer}>
+                    <ActivityIndicator size="large" color="#E91E63" />
+                    <Text style={styles.loadingText}>Cargando pedidos...</Text>
+                </View>
+            </View>
+        );
+    }
 
     return (
-        <SafeAreaView style={styles.container}>
-            <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-
-                {/* Header */}
-                <View style={styles.header}>
-                    <Text style={styles.pageTitle}>Mis Pedidos 📦</Text>
-                    <Text style={styles.pageSubtitle}>Rastrea tus compras y pagos</Text>
-                </View>
-
-                {/* Tarjeta de Orden Detallada */}
-                <View style={styles.card}>
-                    {/* Cabecera de la Orden */}
-                    <TouchableOpacity
-                        style={[styles.cardHeader, expandedOrder && styles.cardHeaderBorder]}
-                        onPress={toggleExpand}
-                        activeOpacity={0.7}
-                    >
-                        <View style={styles.headerLeft}>
-                            <View style={styles.iconBox}>
-                                <Text style={{ fontSize: 24 }}>👟</Text>
-                            </View>
-                            <View>
-                                <Text style={styles.orderId}>Orden #{orderDetails.id}</Text>
-                                <Text style={styles.orderDetailText}>{orderDetails.store} • {orderDetails.product}</Text>
-                                <View style={styles.statusBadge}>
-                                    <Text style={styles.statusBadgeText}>En Tránsito</Text>
-                                </View>
-                            </View>
-                        </View>
-                        <View style={styles.headerRight}>
-                            <Text style={styles.remainingLabel}>Restante</Text>
-                            <Text style={styles.remainingAmount}>${orderDetails.remainingAmount.toFixed(2)}</Text>
-                            <Feather
-                                name="chevron-down"
-                                size={16}
-                                color="#9CA3AF"
-                                style={[styles.chevron, expandedOrder && styles.chevronRotated]}
-                            />
-                        </View>
-                    </TouchableOpacity>
-
-                    {expandedOrder && (
-                        <View style={styles.expandedContent}>
-
-                            {/* 1. SECCIÓN DE TRACKING (Línea de tiempo horizontal compacta) */}
-                            <View style={styles.section}>
-                                <Text style={styles.sectionTitle}>RASTREO DE ENVÍO</Text>
-                                <View style={styles.timelineContainer}>
-                                    {/* Línea conectora de fondo */}
-                                    <View style={styles.timelineLine} />
-
-                                    {orderDetails.trackingSteps.map((step, idx) => (
-                                        <View key={idx} style={styles.timelineStep}>
-                                            <View style={[
-                                                styles.timelineDot,
-                                                step.completed ? styles.dotCompleted :
-                                                    step.current ? styles.dotCurrent : styles.dotPending
-                                            ]}>
-                                                {step.completed && <View style={styles.dotInnerCompleted} />}
-                                                {step.current && <View style={styles.dotInnerCurrent} />}
-                                            </View>
-                                            <Text style={[
-                                                styles.stepTitle,
-                                                step.current ? styles.textCurrent : styles.textGray
-                                            ]}>
-                                                {step.title}
-                                            </Text>
-                                        </View>
-                                    ))}
-                                </View>
-
-                                <View style={styles.infoBox}>
-                                    <Feather name="clock" size={14} color="#3B82F6" style={{ marginTop: 2 }} />
-                                    <Text style={styles.infoBoxText}>
-                                        Tu paquete llegó a Miami el 28 Nov. Próxima actualización estimada: 05 Dic (Aduana Vzla).
-                                    </Text>
-                                </View>
-                            </View>
-
-                            {/* 2. SECCIÓN FINANCIERA (Cuotas) */}
-                            <View style={styles.financeCard}>
-                                <View style={styles.financeHeader}>
-                                    <Text style={styles.financeTitle}>PLAN DE PAGOS</Text>
-                                    <Text style={styles.financeSubtitle}>
-                                        Pagado: <Text style={styles.textGreen}>${orderDetails.paidAmount}</Text> / ${orderDetails.totalPrice}
-                                    </Text>
-                                </View>
-
-                                <View style={styles.installmentsList}>
-                                    {orderDetails.installments.map((inst) => (
-                                        <View key={inst.id} style={styles.installmentRow}>
-                                            <View style={styles.installmentLeft}>
-                                                {/* Icono de Estado de Cuota */}
-                                                {inst.status === 'paid' ? (
-                                                    <Feather name="check-circle" size={16} color="#22C55E" />
-                                                ) : inst.status === 'pending' ? (
-                                                    <View style={styles.pendingCircle}>
-                                                        <View style={styles.pendingDot} />
-                                                    </View>
-                                                ) : (
-                                                    <View style={styles.lockedCircle} />
-                                                )}
-
-                                                <View style={{ marginLeft: 12 }}>
-                                                    <Text style={[
-                                                        styles.installmentName,
-                                                        inst.status === 'paid' && styles.textStrikethrough
-                                                    ]}>
-                                                        {inst.name}
-                                                    </Text>
-                                                    <Text style={styles.installmentDate}>{inst.dueDate}</Text>
-                                                </View>
-                                            </View>
-
-                                            <View style={styles.installmentRight}>
-                                                <Text style={[
-                                                    styles.installmentAmount,
-                                                    inst.status === 'paid' ? styles.textGray : styles.textDark
-                                                ]}>
-                                                    ${inst.amount.toFixed(2)}
-                                                </Text>
-                                                {inst.status === 'pending' && (
-                                                    <View style={styles.payBadge}>
-                                                        <Text style={styles.payBadgeText}>Pagar</Text>
-                                                    </View>
-                                                )}
-                                            </View>
-                                        </View>
-                                    ))}
-                                </View>
-
-                                {/* Botón de Pagar Cuota Pendiente */}
-                                <TouchableOpacity style={styles.payButton}>
-                                    <Text style={styles.payButtonText}>Pagar Cuota Pendiente ($18.00)</Text>
-                                </TouchableOpacity>
-                            </View>
-                        </View>
+        <View style={styles.container}>
+            <View style={styles.header}>
+                <View style={styles.headerLeft}>
+                    <Text style={styles.headerTitle}>Mis Pedidos</Text>
+                    {meta?.total > 0 && (
+                        <Text style={styles.totalCount}>{meta.total} pedido(s)</Text>
                     )}
                 </View>
+                <TouchableOpacity
+                    style={styles.calendarButton}
+                    onPress={() => setShowDateModal(true)}
+                >
+                    <Ionicons
+                        name="calendar-outline"
+                        size={24}
+                        color={selectedDateFilter ? '#FF007F' : '#757575'}
+                    />
+                    {selectedDateFilter && (
+                        <View style={styles.filterBadge}>
+                            <Text style={styles.filterBadgeText}>
+                                {FECHA_FILTER.find(f => f.key === selectedDateFilter)?.label}
+                            </Text>
+                        </View>
+                    )}
+                </TouchableOpacity>
+            </View>
 
-                {/* Orden Antigua (Ejemplo colapsado) */}
-                <TouchableOpacity style={[styles.card, styles.pastOrderCard]}>
-                    <View style={styles.cardHeader}>
-                        <View style={styles.headerLeft}>
-                            <View style={styles.iconBox}>
-                                <Text style={{ fontSize: 20 }}>👕</Text>
+            {/* Status Filter Chips */}
+            <View style={styles.filterContainer}>
+                <FlatList
+                    data={ESTADOS_FILTER}
+                    renderItem={renderFilterItem}
+                    keyExtractor={(item) => item.key || 'all'}
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.filterList}
+                />
+            </View>
+
+            <FlatList
+                data={orders}
+                renderItem={renderOrderItem}
+                keyExtractor={(item) => item.id_venta?.toString()}
+                contentContainerStyle={orders.length === 0 ? styles.emptyListContainer : styles.listContainer}
+                ListEmptyComponent={renderEmptyList}
+                ListFooterComponent={renderFooter}
+                onEndReached={loadMore}
+                onEndReachedThreshold={0.3}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={onRefresh}
+                        colors={['#E91E63']}
+                        tintColor="#E91E63"
+                    />
+                }
+            />
+
+            {/* Date Filter Modal */}
+            <Modal
+                visible={showDateModal}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={() => setShowDateModal(false)}
+            >
+                <TouchableOpacity
+                    style={styles.modalOverlay}
+                    activeOpacity={1}
+                    onPress={() => setShowDateModal(false)}
+                >
+                    <View style={styles.dateModalContainer} onStartShouldSetResponder={() => true}>
+                        {/* Header with close button */}
+                        <View style={styles.dateModalHeader}>
+                            <View style={styles.dateModalBrandRow}>
+                                <Ionicons name="cart" size={24} color="#FF007F" />
+                                <Text style={styles.dateModalBrand}>Mamá SAN</Text>
                             </View>
-                            <View>
-                                <Text style={styles.orderId}>Orden #MS-1029</Text>
-                                <View style={styles.deliveredBadge}>
-                                    <Text style={styles.deliveredText}>Entregado</Text>
+                            <TouchableOpacity
+                                style={styles.dateModalCloseButton}
+                                onPress={() => setShowDateModal(false)}
+                            >
+                                <Ionicons name="close" size={24} color="#757575" />
+                            </TouchableOpacity>
+                        </View>
+
+                        <Text style={styles.dateModalTitle}>Filtra por Fecha</Text>
+
+                        {/* Filter Options as Pills */}
+                        <View style={styles.filterPillsContainer}>
+                            {FECHA_FILTER.map((item) => (
+                                <TouchableOpacity
+                                    key={item.key || 'date-all'}
+                                    style={[
+                                        styles.filterPill,
+                                        selectedDateFilter === item.key && styles.filterPillActive
+                                    ]}
+                                    onPress={() => {
+                                        if (item.key === 'custom') {
+                                            if (!customStartDate) {
+                                                const start = new Date();
+                                                start.setDate(start.getDate() - 30);
+                                                setCustomStartDate(start);
+                                            }
+                                            if (!customEndDate) {
+                                                setCustomEndDate(new Date());
+                                            }
+                                            setSelectedDateFilter('custom');
+                                        } else {
+                                            // Apply filter immediately and close modal
+                                            setSelectedDateFilter(item.key);
+                                            onDateFilterChange(item.key);
+                                            setShowDateModal(false);
+                                        }
+                                    }}
+                                >
+                                    <Text style={[
+                                        styles.filterPillText,
+                                        selectedDateFilter === item.key && styles.filterPillTextActive
+                                    ]}>
+                                        {item.label}
+                                    </Text>
+                                    {selectedDateFilter === item.key && (
+                                        <View style={styles.filterPillCheck}>
+                                            <Ionicons name="checkmark" size={14} color="#FFFFFF" />
+                                        </View>
+                                    )}
+                                </TouchableOpacity>
+                            ))}
+                        </View>
+
+                        {/* Custom date range */}
+                        {selectedDateFilter === 'custom' && (
+                            <View style={styles.customDateSection}>
+                                <View style={styles.customDateRow}>
+                                    <TouchableOpacity
+                                        style={styles.customDatePicker}
+                                        onPress={() => setShowStartPicker(true)}
+                                    >
+                                        <Text style={styles.customDateLabel}>Desde</Text>
+                                        <Text style={styles.customDateValue}>
+                                            {customStartDate ? customStartDate.toLocaleDateString('es-VE') : 'Seleccionar'}
+                                        </Text>
+                                    </TouchableOpacity>
+
+                                    <Ionicons name="arrow-forward" size={20} color="#FF007F" />
+
+                                    <TouchableOpacity
+                                        style={styles.customDatePicker}
+                                        onPress={() => setShowEndPicker(true)}
+                                    >
+                                        <Text style={styles.customDateLabel}>Hasta</Text>
+                                        <Text style={styles.customDateValue}>
+                                            {customEndDate ? customEndDate.toLocaleDateString('es-VE') : 'Seleccionar'}
+                                        </Text>
+                                    </TouchableOpacity>
                                 </View>
                             </View>
-                        </View>
-                        <Text style={styles.pastOrderDate}>Hace 2 meses</Text>
+                        )}
+
+                        {/* Action Buttons - Only show when custom is selected */}
+                        {selectedDateFilter === 'custom' && (
+                            <View style={styles.dateModalActions}>
+                                <TouchableOpacity
+                                    style={styles.clearButton}
+                                    onPress={() => {
+                                        setSelectedDateFilter(null);
+                                        setCustomStartDate(null);
+                                        setCustomEndDate(null);
+                                        onDateFilterChange(null);
+                                        setShowDateModal(false);
+                                    }}
+                                >
+                                    <Ionicons name="close" size={18} color="#666" />
+                                    <Text style={styles.clearButtonText}>Limpiar</Text>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity
+                                    style={styles.applyFilterButton}
+                                    onPress={() => {
+                                        if (customStartDate && customEndDate) {
+                                            fetchOrders(1, selectedFilter, 'custom', false);
+                                        }
+                                        setShowDateModal(false);
+                                    }}
+                                >
+                                    <Text style={styles.applyFilterButtonText}>Aplicar Filtro</Text>
+                                    <Ionicons name="heart" size={18} color="#FFFFFF" />
+                                </TouchableOpacity>
+                            </View>
+                        )}
                     </View>
                 </TouchableOpacity>
+            </Modal>
 
-            </ScrollView>
-        </SafeAreaView>
+            {/* Date Pickers */}
+            {showStartPicker && (
+                <DateTimePicker
+                    value={customStartDate || new Date()}
+                    mode="date"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    onChange={(event, date) => {
+                        setShowStartPicker(false);
+                        if (date) setCustomStartDate(date);
+                    }}
+                    maximumDate={customEndDate || new Date()}
+                    accentColor="#FF007F"
+                    themeVariant="light"
+                />
+            )}
+            {showEndPicker && (
+                <DateTimePicker
+                    value={customEndDate || new Date()}
+                    mode="date"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    onChange={(event, date) => {
+                        setShowEndPicker(false);
+                        if (date) setCustomEndDate(date);
+                    }}
+                    minimumDate={customStartDate}
+                    maximumDate={new Date()}
+                    accentColor="#FF007F"
+                    themeVariant="light"
+                />
+            )}
+        </View>
     );
 };
 
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#F9FAFB', // gray-50
-    },
-    scrollContent: {
-        paddingBottom: 100,
-        paddingHorizontal: 16,
+        backgroundColor: '#F5F5F5',
+        paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 10 : 50,
     },
     header: {
-        paddingTop: 24,
-        paddingBottom: 16,
-        paddingHorizontal: 8,
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingHorizontal: 20,
+        paddingVertical: 15,
+        backgroundColor: '#FFFFFF',
+        borderBottomWidth: 1,
+        borderBottomColor: '#E0E0E0',
     },
-    pageTitle: {
+    headerTitle: {
         fontSize: 24,
         fontWeight: 'bold',
-        color: '#7B1FA2',
+        color: '#333',
+    },
+    headerLeft: {
+        flex: 1,
+    },
+    totalCount: {
+        fontSize: 14,
+        color: '#757575',
+    },
+    calendarButton: {
+        padding: 8,
+        position: 'relative',
+    },
+    filterBadge: {
+        position: 'absolute',
+        bottom: 0,
+        right: 0,
+        backgroundColor: '#FF007F',
+        borderRadius: 8,
+        paddingHorizontal: 4,
+        paddingVertical: 2,
+    },
+    filterBadgeText: {
+        fontSize: 8,
+        color: '#FFFFFF',
+        fontWeight: '600',
+    },
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.4)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    dateModalContainer: {
+        backgroundColor: '#FFF5F8',
+        marginHorizontal: 20,
+        borderRadius: 24,
+        padding: 24,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.2,
+        shadowRadius: 12,
+        elevation: 10,
+        width: '90%',
+        maxWidth: 360,
+    },
+    dateModalHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 12,
+    },
+    dateModalBrandRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    dateModalCloseButton: {
+        padding: 4,
+    },
+    dateModalBrand: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        color: '#FF007F',
+        marginLeft: 8,
+    },
+    dateModalTitle: {
+        fontSize: 22,
+        fontWeight: 'bold',
+        color: '#333',
+        textAlign: 'center',
+        marginBottom: 20,
+    },
+    filterPillsContainer: {
+        marginBottom: 16,
+    },
+    filterPill: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#FFE4EC',
+        borderRadius: 25,
+        paddingVertical: 12,
+        paddingHorizontal: 20,
+        marginBottom: 10,
+    },
+    filterPillActive: {
+        backgroundColor: '#FF007F',
+    },
+    filterPillText: {
+        fontSize: 15,
+        color: '#C41E5A',
+        fontWeight: '500',
+    },
+    filterPillTextActive: {
+        color: '#FFFFFF',
+        fontWeight: '600',
+    },
+    filterPillCheck: {
+        marginLeft: 8,
+        width: 22,
+        height: 22,
+        borderRadius: 11,
+        backgroundColor: '#FFFFFF',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    customDateSection: {
+        backgroundColor: '#FFFFFF',
+        borderRadius: 16,
+        padding: 16,
+        marginBottom: 16,
+    },
+    customDateRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    },
+    customDatePicker: {
+        flex: 1,
+        backgroundColor: '#F8F8F8',
+        borderRadius: 12,
+        padding: 12,
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: '#E0E0E0',
+    },
+    customDateLabel: {
+        fontSize: 11,
+        color: '#9E9E9E',
         marginBottom: 4,
     },
-    pageSubtitle: {
+    customDateValue: {
         fontSize: 14,
-        color: '#6B7280', // gray-500
+        color: '#333',
+        fontWeight: '500',
     },
-    card: {
-        backgroundColor: 'white',
+    dateModalActions: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginTop: 8,
+    },
+    clearButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#F0F0F0',
+        borderRadius: 25,
+        paddingVertical: 12,
+        paddingHorizontal: 20,
+        borderWidth: 1,
+        borderColor: '#DDD',
+    },
+    clearButtonText: {
+        fontSize: 14,
+        color: '#666',
+        marginLeft: 6,
+    },
+    applyFilterButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#FF007F',
+        borderRadius: 25,
+        paddingVertical: 12,
+        paddingHorizontal: 24,
+    },
+    applyFilterButtonText: {
+        fontSize: 14,
+        color: '#FFFFFF',
+        fontWeight: '600',
+        marginRight: 8,
+    },
+    filterContainer: {
+        backgroundColor: '#FFFFFF',
+        paddingVertical: 10,
+        borderBottomWidth: 1,
+        borderBottomColor: '#E0E0E0',
+    },
+    filterList: {
+        paddingHorizontal: 15,
+    },
+    filterChip: {
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 20,
+        backgroundColor: '#F0F0F0',
+        marginRight: 10,
+    },
+    filterChipActive: {
+        backgroundColor: '#E91E63',
+    },
+    filterChipText: {
+        fontSize: 13,
+        color: '#666',
+        fontWeight: '500',
+    },
+    filterChipTextActive: {
+        color: '#FFFFFF',
+    },
+    dateFilterContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 15,
+        paddingVertical: 10,
+        backgroundColor: '#F8F9FA',
+    },
+    dateFilterChip: {
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 15,
+        backgroundColor: '#FFFFFF',
+        marginRight: 8,
+        borderWidth: 1,
+        borderColor: '#E0E0E0',
+    },
+    dateFilterChipActive: {
+        backgroundColor: '#FF007F',
+        borderColor: '#FF007F',
+    },
+    dateFilterChipText: {
+        fontSize: 12,
+        color: '#666',
+        fontWeight: '500',
+    },
+    dateFilterChipTextActive: {
+        color: '#FFFFFF',
+    },
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    loadingText: {
+        marginTop: 10,
+        fontSize: 16,
+        color: '#757575',
+    },
+    listContainer: {
+        padding: 15,
+    },
+    emptyListContainer: {
+        flexGrow: 1,
+        justifyContent: 'center',
+    },
+    orderCard: {
+        backgroundColor: '#FFFFFF',
         borderRadius: 12,
-        marginBottom: 16,
-        elevation: 4,
+        padding: 15,
+        marginBottom: 12,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.1,
-        shadowRadius: 8,
-        overflow: 'hidden',
+        shadowRadius: 4,
+        elevation: 3,
     },
-    cardHeader: {
+    orderHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        alignItems: 'flex-start',
-        padding: 16,
-    },
-    cardHeaderBorder: {
-        borderBottomWidth: 1,
-        borderBottomColor: '#F3F4F6',
-    },
-    headerLeft: {
-        flexDirection: 'row',
-        gap: 12,
-        flex: 1,
-    },
-    iconBox: {
-        width: 48,
-        height: 48,
-        backgroundColor: '#F3F4F6', // gray-100
-        borderRadius: 12,
-        justifyContent: 'center',
         alignItems: 'center',
-        marginRight: 12,
+        marginBottom: 12,
     },
     orderId: {
-        fontSize: 14,
-        fontWeight: 'bold',
-        color: '#1F2937', // gray-800
-    },
-    orderDetailText: {
-        fontSize: 12,
-        color: '#6B7280', // gray-500
-        marginBottom: 4,
-    },
-    statusBadge: {
-        backgroundColor: '#DBEAFE', // blue-100
-        paddingHorizontal: 8,
-        paddingVertical: 2,
-        borderRadius: 6,
-        alignSelf: 'flex-start',
-    },
-    statusBadgeText: {
-        color: '#1D4ED8', // blue-700
-        fontSize: 10,
-        fontWeight: 'bold',
-    },
-    headerRight: {
-        alignItems: 'flex-end',
-    },
-    remainingLabel: {
-        fontSize: 12,
-        color: '#9CA3AF', // gray-400
-    },
-    remainingAmount: {
         fontSize: 16,
         fontWeight: 'bold',
-        color: '#FF007F',
+        color: '#333',
     },
-    chevron: {
-        marginTop: 4,
-    },
-    chevronRotated: {
-        transform: [{ rotate: '180deg' }],
-    },
-    expandedContent: {
-        padding: 16,
-        gap: 24,
-    },
-    section: {
-        marginBottom: 8,
-    },
-    sectionTitle: {
-        fontSize: 12,
-        fontWeight: 'bold',
-        color: '#9CA3AF', // gray-400
-        textTransform: 'uppercase',
-        marginBottom: 12,
-        letterSpacing: 0.5,
-    },
-    timelineContainer: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'flex-start',
-        position: 'relative',
-        paddingHorizontal: 8,
-        marginBottom: 12,
-    },
-    timelineLine: {
-        position: 'absolute',
-        top: 7, // Center of 16px dot
-        left: 20,
-        right: 20,
-        height: 2,
-        backgroundColor: '#E5E7EB', // gray-200
-        zIndex: -1,
-    },
-    timelineStep: {
-        alignItems: 'center',
-        width: '20%',
-    },
-    timelineDot: {
-        width: 16,
-        height: 16,
-        borderRadius: 8,
-        borderWidth: 2,
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: 'white',
-        marginBottom: 4,
-    },
-    dotCompleted: {
-        borderColor: '#22C55E', // green-500
-    },
-    dotCurrent: {
-        borderColor: '#FF007F',
-    },
-    dotPending: {
-        borderColor: '#D1D5DB', // gray-300
-    },
-    dotInnerCompleted: {
-        width: 8,
-        height: 8,
-        borderRadius: 4,
-        backgroundColor: '#22C55E',
-    },
-    dotInnerCurrent: {
-        width: 8,
-        height: 8,
-        borderRadius: 4,
-        backgroundColor: '#FF007F',
-    },
-    stepTitle: {
-        fontSize: 9,
-        textAlign: 'center',
-        fontWeight: '500',
-        lineHeight: 12,
-    },
-    textCurrent: {
-        color: '#FF007F',
-    },
-    textGray: {
-        color: '#9CA3AF',
-    },
-    infoBox: {
-        backgroundColor: '#EFF6FF', // blue-50
-        padding: 8,
-        borderRadius: 8,
-        flexDirection: 'row',
-        alignItems: 'flex-start',
-        gap: 8,
-    },
-    infoBoxText: {
-        fontSize: 10,
-        color: '#1D4ED8', // blue-700
-        flex: 1,
-    },
-    financeCard: {
-        backgroundColor: '#F9FAFB', // gray-50
+    statusBadge: {
+        paddingHorizontal: 10,
+        paddingVertical: 4,
         borderRadius: 12,
-        padding: 16,
-        borderWidth: 1,
-        borderColor: '#F3F4F6',
     },
-    financeHeader: {
+    statusText: {
+        color: '#FFFFFF',
+        fontSize: 11,
+        fontWeight: '600',
+    },
+    orderDetails: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        alignItems: 'flex-end',
+        alignItems: 'center',
         marginBottom: 12,
+        paddingBottom: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: '#F0F0F0',
     },
-    financeTitle: {
-        fontSize: 12,
+    orderInfoRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    orderInfoText: {
+        fontSize: 13,
+        color: '#757575',
+        marginLeft: 5,
+    },
+    orderTotal: {
+        fontSize: 18,
         fontWeight: 'bold',
-        color: '#374151', // gray-700
-        textTransform: 'uppercase',
+        color: '#E91E63',
     },
-    financeSubtitle: {
-        fontSize: 10,
-        color: '#6B7280', // gray-500
-    },
-    textGreen: {
-        color: '#16A34A', // green-600
-        fontWeight: 'bold',
-    },
-    installmentsList: {
-        gap: 12,
-    },
-    installmentRow: {
+    orderFooter: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
     },
-    installmentLeft: {
-        flexDirection: 'row',
+    emptyContainer: {
         alignItems: 'center',
+        paddingHorizontal: 40,
     },
-    pendingCircle: {
-        width: 16,
-        height: 16,
-        borderRadius: 8,
-        borderWidth: 2,
-        borderColor: '#FF007F',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    pendingDot: {
-        width: 6,
-        height: 6,
-        borderRadius: 3,
-        backgroundColor: '#FF007F',
-    },
-    lockedCircle: {
-        width: 16,
-        height: 16,
-        borderRadius: 8,
-        borderWidth: 2,
-        borderColor: '#D1D5DB', // gray-300
-    },
-    installmentName: {
-        fontSize: 14,
-        fontWeight: '500',
-        color: '#374151', // gray-700
-    },
-    textStrikethrough: {
-        color: '#9CA3AF',
-        textDecorationLine: 'line-through',
-    },
-    installmentDate: {
-        fontSize: 10,
-        color: '#9CA3AF',
-    },
-    installmentRight: {
-        alignItems: 'flex-end',
-    },
-    installmentAmount: {
-        fontSize: 14,
+    emptyTitle: {
+        fontSize: 20,
         fontWeight: 'bold',
+        color: '#333',
+        marginTop: 20,
+        marginBottom: 10,
+        textAlign: 'center',
     },
-    textDark: {
-        color: '#1F2937',
+    emptySubtitle: {
+        fontSize: 14,
+        color: '#757575',
+        textAlign: 'center',
+        lineHeight: 20,
     },
-    payBadge: {
-        backgroundColor: '#FCE7F3', // pink-50
-        paddingHorizontal: 6,
-        paddingVertical: 2,
-        borderRadius: 4,
-        marginTop: 2,
-    },
-    payBadgeText: {
-        fontSize: 9,
-        fontWeight: 'bold',
-        color: '#FF007F',
-    },
-    payButton: {
-        backgroundColor: '#7B1FA2',
+    shopButton: {
+        backgroundColor: '#E91E63',
+        paddingHorizontal: 30,
         paddingVertical: 12,
-        borderRadius: 8,
+        borderRadius: 25,
+        marginTop: 25,
+    },
+    shopButtonText: {
+        color: '#FFFFFF',
+        fontSize: 16,
+        fontWeight: '600',
+    },
+    footerLoader: {
+        paddingVertical: 20,
         alignItems: 'center',
-        marginTop: 16,
-    },
-    payButtonText: {
-        color: 'white',
-        fontSize: 12,
-        fontWeight: 'bold',
-    },
-    pastOrderCard: {
-        opacity: 0.6,
-    },
-    deliveredBadge: {
-        backgroundColor: '#DCFCE7', // green-100
-        paddingHorizontal: 8,
-        paddingVertical: 2,
-        borderRadius: 8,
-        alignSelf: 'flex-start',
-        marginTop: 4,
-    },
-    deliveredText: {
-        color: '#15803D', // green-700
-        fontSize: 10,
-        fontWeight: 'bold',
-    },
-    pastOrderDate: {
-        fontSize: 12,
-        color: '#6B7280',
-        fontWeight: '500',
     },
 });
 

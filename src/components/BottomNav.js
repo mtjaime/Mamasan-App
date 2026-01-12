@@ -1,10 +1,12 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Dimensions, Platform } from 'react-native';
 import { Feather, Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width } = Dimensions.get('window');
 
 const BottomNav = ({ state, descriptors, navigation }) => {
+    const insets = useSafeAreaInsets();
     const currentRoute = state.routes[state.index];
     const activeRouteName = currentRoute.name;
 
@@ -27,7 +29,7 @@ const BottomNav = ({ state, descriptors, navigation }) => {
     const isActive = (routeName) => activeRouteName === routeName;
 
     return (
-        <View style={styles.container}>
+        <View style={[styles.container, { paddingBottom: Math.max(insets.bottom, 10) }]}>
             {/* Botón Inicio */}
             <TouchableOpacity
                 style={styles.tabButton}
@@ -102,7 +104,6 @@ const styles = StyleSheet.create({
         borderTopWidth: 1,
         borderTopColor: '#F3F4F6', // gray-100
         paddingHorizontal: 20,
-        paddingBottom: Platform.OS === 'ios' ? 20 : 10,
         paddingTop: 10,
         justifyContent: 'space-between',
         alignItems: 'center',

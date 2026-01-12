@@ -1,4 +1,7 @@
 import { amazonScraperScript } from './amazon';
+import { walmartScraperScript } from './walmart';
+import { temuScraperScript } from './temu';
+import { sheinScraperScript } from './shein';
 
 export const getScraperForUrl = (url) => {
   if (url.includes('amazon')) {
@@ -20,6 +23,30 @@ export const getScraperForUrl = (url) => {
   return genericScraperScript;
 };
 
+export const isCartPage = (url) => {
+  const lowerUrl = url.toLowerCase();
+  if (lowerUrl.includes('amazon') && (lowerUrl.includes('/cart') || lowerUrl.includes('/gp/cart'))) return true;
+  if (lowerUrl.includes('shein') && lowerUrl.includes('/cart')) return true;
+  if (lowerUrl.includes('nike') && lowerUrl.includes('/cart')) return true;
+  if (lowerUrl.includes('walmart') && lowerUrl.includes('/cart')) return true;
+  if (lowerUrl.includes('temu') && (lowerUrl.includes('/cart') || lowerUrl.includes('cart.html'))) return true;
+  if (lowerUrl.includes('aliexpress') && (lowerUrl.includes('/shoppingcart') || lowerUrl.includes('/cart'))) return true;
+  // Add others as needed
+  return false;
+};
+
+export const getCartUrl = (currentUrl) => {
+  const lowerUrl = currentUrl.toLowerCase();
+  if (lowerUrl.includes('amazon')) return 'https://www.amazon.com/gp/cart/view.html';
+  if (lowerUrl.includes('shein')) return 'https://us.shein.com/cart'; // Adjust domain dynamically if possible, but hardcoded for now
+  if (lowerUrl.includes('nike')) return 'https://www.nike.com/cart';
+  if (lowerUrl.includes('walmart')) return 'https://www.walmart.com/cart';
+  if (lowerUrl.includes('temu')) return 'https://www.temu.com/cart';
+  if (lowerUrl.includes('aliexpress')) return 'https://www.aliexpress.com/p/shoppingcart/index.html';
+  return null;
+};
+
+
 // --- Helper for extraction ---
 const commonExtractionScript = `
   function extractPrice(text) {
@@ -39,99 +66,103 @@ const nikeScraperScript = `
 window.scrapeCart = function() {
   try {
     const items = [];
-    // Nike Selectors - Updated
-    // Try multiple potential selectors for robustness
-    const cartItems = document.querySelectorAll('[data-testid="cart-item"], .cart-item, .css-177n1u3, [data-automation="cart-item"]'); 
+    // Nike Selectors - Updated for robustness
+    // Use more specific selectors to avoid selecting parent containers
+    const cartItems = document.querySelectorAll('[data-testid="cart-item"], .cart-item, [data-automation="cart-item"]'); 
     
-    cartItems.forEach(item => {
-      const titleEl = item.querySelector('[data-testid="product-title"], .product-title, h2, h3, [data-automation="product-title"]');
-      const priceEl = item.querySelector('[data-testid="product-price"], .product-price, [data-test="product-price"], [data-automation="product-price"], span[class*="price"]');
-      const imageEl = item.querySelector('img');
-      const linkEl = item.querySelector('a');
-      
-      // Try to get SKU/Style Code from URL or text
-      let sku = 'N/A';
-      if (linkEl && linkEl.href) {
-          const match = linkEl.href.match(/([A-Z0-9]{6}-[0-9]{3})/);
-          if (match) sku = match[1];
-      }
-      if (sku === 'N/A') {
-          // Look for style code in text
-          const styleText = item.innerText.match(/Style:?\\s*([A-Z0-9-]+)/i);
-          if (styleText) sku = styleText[1];
-      }
-
-      if (titleEl) {
-        items.push({
-          id: sku !== 'N/A' ? sku : Date.now().toString() + Math.random(),
-          title: titleEl.innerText,
-          price: priceEl ? parseFloat(priceEl.innerText.replace(/[^0-9.]/g, '')) : 0,
-          image: imageEl ? imageEl.src : '',
-          url: linkEl ? linkEl.href : window.location.href,
-          sku: sku,
-          provider: 'Nike',
-          quantity: 1, // Quantity logic can be added similar to Walmart if needed
-          options: (function() {
-              const opts = [];
-              const sizeEl = item.querySelector('[data-testid="product-size"], .product-size');
-              const colorEl = item.querySelector('[data-testid="product-color"], .product-color');
-              if (sizeEl) opts.push(sizeEl.innerText);
-              if (colorEl) opts.push(colorEl.innerText);
-              
-              if (opts.length === 0) {
-                  const text = item.innerText;
-                  const style = text.match(/(Style|Estilo):?\s*([A-Z0-9-]+)/i);
-                  const size = text.match(/(Size|Talla):?\s*([A-Z0-9\.]+)/i);
-                  const color = text.match(/(Color):?\s*([A-Za-z\s]+)/i);
-                  if (style) opts.push(style[0]);
-                  if (size) opts.push(size[0]);
-                  if (color) opts.push(color[0]);
-              }
-              return opts.join(', ');
-          })()
+    // If no specific items found, try to find by class but filter out parents
+    if (cartItems.length === 0) {
+        const potentialItems = document.querySelectorAll('.css-177n1u3');
+        // Filter out elements that contain other potential items
+        potentialItems.forEach(item => {
+            if (item.querySelectorAll('.css-177n1u3').length === 0) {
+                // This is a leaf node (likely an item)
+            }
         });
+    }
+
+    cartItems.forEach((item, index) => {
+      try {
+          // Ensure we are not processing a container that contains other cart items
+          if (item.querySelectorAll('[data-testid="cart-item"], .cart-item').length > 0) {
+              return; // Skip container
+          }
+
+          const titleEl = item.querySelector('[data-testid="product-title"], .product-title, h2, h3, [data-automation="product-title"]');
+          const priceEl = item.querySelector('[data-testid="product-price"], .product-price, [data-test="product-price"], [data-automation="product-price"], span[class*="price"]');
+          const imageEl = item.querySelector('img');
+          const linkEl = item.querySelector('a');
+          
+          // Try to get SKU/Style Code from URL or text
+          let sku = 'N/A';
+          if (linkEl && linkEl.href) {
+              const match = linkEl.href.match(/([A-Z0-9]{6}-[0-9]{3})/);
+              if (match) sku = match[1];
+          }
+          if (sku === 'N/A') {
+              // Look for style code in text
+              const styleText = item.innerText.match(/Style:?\\s*([A-Z0-9-]+)/i);
+              if (styleText) sku = styleText[1];
+          }
+
+          // Quantity - Strictly scoped to this item
+          let quantity = 1;
+          const qtySelect = item.querySelector('select[aria-label*="Quantity"], select');
+          if (qtySelect) {
+              quantity = parseInt(qtySelect.value, 10) || 1;
+          } else {
+              const qtyContainer = item.querySelector('[data-testid="quantity-display"], .quantity-display');
+              if (qtyContainer) {
+                  quantity = parseInt(qtyContainer.innerText, 10) || 1;
+              } else {
+                  const qtyText = item.innerText.match(/Qty:?\\s*(\\d+)/i);
+                  if (qtyText) quantity = parseInt(qtyText[1], 10);
+              }
+          }
+
+          // Options (Size/Color) - Critical for distinguishing variants
+          const options = (function() {
+              const opts = [];
+              // Try specific selectors first
+              const sizeEl = item.querySelector('[data-testid="product-size"], .product-size, [data-automation="product-size"]');
+              const colorEl = item.querySelector('[data-testid="product-color"], .product-color, [data-automation="product-color"]');
+              
+              if (sizeEl) opts.push(sizeEl.innerText.trim());
+              if (colorEl) opts.push(colorEl.innerText.trim());
+              
+              // Fallback: Parse text content for common patterns if selectors fail
+              if (opts.length === 0) {
+                   const text = item.innerText;
+                   const sizeMatch = text.match(/(Size|Talla):\\s*([^\\n]+)/i);
+                   const colorMatch = text.match(/(Color):\\s*([^\\n]+)/i);
+                   if (sizeMatch) opts.push(sizeMatch[0].trim());
+                   if (colorMatch) opts.push(colorMatch[0].trim());
+              }
+              
+              return opts.join(', ');
+          })();
+
+          if (titleEl) {
+            // Generate a unique ID that includes the SKU AND the options (size/color)
+            // This prevents merging different sizes of the same product
+            const uniqueId = (sku !== 'N/A' ? sku : 'ITEM') + '-' + options.replace(/[^a-zA-Z0-9]/g, '') + '-' + index;
+
+            items.push({
+              id: uniqueId,
+              title: titleEl.innerText,
+              price: priceEl ? parseFloat(priceEl.innerText.replace(/[^0-9.]/g, '')) : 0,
+              image: imageEl ? imageEl.src : '',
+              url: linkEl ? linkEl.href : window.location.href,
+              sku: sku,
+              provider: 'Nike',
+              quantity: quantity,
+              options: options
+            });
+          }
+      } catch (err) {
+          // Continue to next item
       }
     });
-
-    if (items.length === 0) {
-        // Fallback to heuristic if specific selectors fail
-        const allElements = document.getElementsByTagName('*');
-        for (let i = 0; i < allElements.length; i++) {
-            const el = allElements[i];
-            if (el.innerText && el.innerText.trim().match(/^\\$[0-9,]+(\\.[0-9]{2})?$/) && el.children.length === 0) {
-                let container = el.parentElement;
-                let foundImg = null;
-                let foundTitle = null;
-                for (let k = 0; k < 5; k++) {
-                    if (!container) break;
-                    const imgs = container.getElementsByTagName('img');
-                    for (let j = 0; j < imgs.length; j++) {
-                        if (imgs[j].width > 50) { foundImg = imgs[j].src; break; }
-                    }
-                    const titles = container.querySelectorAll('a, h2, h3');
-                    for (let t = 0; t < titles.length; t++) {
-                        if (titles[t].innerText.length > 5 && titles[t].innerText !== el.innerText) {
-                            foundTitle = titles[t].innerText; break;
-                        }
-                    }
-                    if (foundImg && foundTitle) {
-                        items.push({
-                            id: Date.now().toString() + Math.random(),
-                            title: foundTitle,
-                            price: parseFloat(el.innerText.replace(/[^0-9.]/g, '')),
-                            image: foundImg,
-                            url: window.location.href,
-                            sku: 'Nike-Heuristic',
-                            provider: 'Nike',
-                            quantity: 1
-                        });
-                        break;
-                    }
-                    container = container.parentElement;
-                }
-            }
-        }
-    }
 
     window.ReactNativeWebView.postMessage(JSON.stringify({
       type: 'CART_EXTRACTED',
@@ -141,315 +172,217 @@ window.scrapeCart = function() {
     window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ERROR', message: e.toString() }));
   }
 };
+window.scrapeCart();
 `;
 
-const sheinScraperScript = `
-window.scrapeCart = function() {
+// sheinScraperScript is now imported from './shein.js'
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+const aliexpressScraperScript = `
+window.scrapeCart = function () {
   try {
     const items = [];
-    // Shein Selectors - Updated for Mobile/Web
-    // Targeting common container classes for Shein cart items
-    const cartItems = document.querySelectorAll('.cart-item-wrap, .j-cart-item, .c-cart-item, .s-bag-item, .cart-goods-item');
+    const seen = new Set();
     
-    cartItems.forEach(item => {
-      // Title
-      const titleEl = item.querySelector('.goods-name a, .c-cart-item__name a, .s-bag-item__name, .goods-title-link');
-      
-      // Price - Handle ranges or discounts, take the current price
-      const priceEl = item.querySelector('.product-price__current-price, .c-cart-item__price, .s-bag-item__price, .price-current');
-      
-      // Image
-      const imageEl = item.querySelector('.goods-img img, .c-cart-item__img img, .s-bag-item__img, img');
-      
-      // Link
-      const linkEl = item.querySelector('a[href*="/p-"], a[href*=".html"]');
-      
-      // SKU / Product Code
-      // Shein often puts SKU in the URL or hidden input, or as text "SKU: ..."
-      let sku = 'N/A';
-      if (linkEl && linkEl.href) {
-          // Extract ID from URL (e.g., ...-p-123456.html)
-          const idMatch = linkEl.href.match(/-p-(\d+)/);
-          if (idMatch) sku = idMatch[1];
-      }
-      if (sku === 'N/A') {
-          // Look for SKU in text
-          const skuText = item.innerText.match(/SKU:?\\s*([A-Za-z0-9]+)/i);
-          if (skuText) sku = skuText[1];
-      }
-
-      // Quantity
-      let quantity = 1;
-      const qtyInput = item.querySelector('input[type="number"], .s-bag-item__quantity input, .quantity-input');
-      if (qtyInput) {
+    // AliExpress 2024/2025 - Find product titles
+    const productTitles = document.querySelectorAll('.cart-product-name-title');
+    console.log('[AliExpress] Found ' + productTitles.length + ' items');
+    
+    productTitles.forEach((titleEl, index) => {
+      try {
+        const title = titleEl.innerText.trim();
+        const productUrl = titleEl.href || '';
+        
+        // Extract product ID from URL
+        const idMatch = productUrl.match(/item\\/(\\d+)/);
+        const productId = idMatch ? idMatch[1] : ('ali-' + index);
+        
+        console.log('[AliExpress] Processing #' + index + ': ' + title.substring(0, 35));
+        
+        // STRATEGY: In AliExpress cart, each item row has:
+        // [Checkbox] [Image Container] [Info Container with title, sku, price] [Qty] [Actions]
+        // We need to find the row container first, then find the image SIBLING
+        
+        // Find the row container (grandparent of title that contains the full row)
+        let rowContainer = titleEl.parentElement;
+        for (let i = 0; i < 10 && rowContainer; i++) {
+          // Look for a container that has both image and quantity
+          const hasImg = rowContainer.querySelector('img[src*="alicdn"]');
+          const hasQty = rowContainer.querySelector('.comet-v2-input-number-input, input[type="number"]');
+          if (hasImg && hasQty) {
+            break;
+          }
+          rowContainer = rowContainer.parentElement;
+        }
+        
+        if (!rowContainer) {
+          rowContainer = titleEl.parentElement?.parentElement?.parentElement || document.body;
+        }
+        
+        // Get quantity
+        let quantity = 1;
+        const qtyInput = rowContainer.querySelector('.comet-v2-input-number-input, input[type="number"]');
+        if (qtyInput) {
           quantity = parseInt(qtyInput.value, 10) || 1;
-      } else {
-          // Check for dropdown or text
-          const qtyText = item.innerText.match(/x\s*(\d+)/);
-          if (qtyText) quantity = parseInt(qtyText[1], 10);
-      }
-      
-      // Variants (Color, Size, etc.)
-      let options = [];
-      const variantEls = item.querySelectorAll('.goods-attr span, .c-cart-item__attr, .s-bag-item__attr, .attr-item');
-      variantEls.forEach(v => {
-          const text = v.innerText.trim();
-          if (text) options.push(text);
-      });
-      
-      // Fallback for variants in text if no specific elements found
-      if (options.length === 0) {
-          const textContent = item.innerText;
-          const colorMatch = textContent.match(/(Color|Color:|Colour):?\s*([A-Za-z\s\/]+)/i);
-          const sizeMatch = textContent.match(/(Size|Size:|Talla):?\s*([A-Za-z0-9\s\.]+)/i);
-          
-          if (colorMatch) options.push(colorMatch[0]);
-          if (sizeMatch) options.push(sizeMatch[0]);
-      }
-
-      if (titleEl) {
-         items.push({
-          id: sku !== 'N/A' ? sku : Date.now().toString() + Math.random(),
-          title: titleEl.innerText.trim(),
-          price: priceEl ? parseFloat(priceEl.innerText.replace(/[^0-9.]/g, '')) : 0,
-          image: imageEl ? imageEl.src : '',
-          url: linkEl ? linkEl.href : window.location.href,
-          sku: sku,
-          provider: 'Shein',
-          quantity: quantity,
-          options: options.join(', ') // Store as a comma-separated string
-        });
-      }
-    });
-
-    // Fallback: Heuristic Search if specific selectors fail
-    if (items.length === 0) {
-        const allElements = document.getElementsByTagName('*');
-        for (let i = 0; i < allElements.length; i++) {
-            const el = allElements[i];
-            // Look for price-like text
-            if (el.innerText && el.innerText.trim().match(/^[$€£¥][0-9,]+(\\.[0-9]{2})?$/) && el.children.length === 0) {
-                let container = el.parentElement;
-                let foundImg = null;
-                let foundTitle = null;
-                let foundQty = 1;
-                
-                for (let k = 0; k < 6; k++) { // Traverse up
-                    if (!container) break;
-                    
-                    // Find Image
-                    if (!foundImg) {
-                        const imgs = container.getElementsByTagName('img');
-                        for (let j = 0; j < imgs.length; j++) {
-                            if (imgs[j].width > 50) { foundImg = imgs[j].src; break; }
-                        }
-                    }
-                    
-                    // Find Title
-                    if (!foundTitle) {
-                        const titles = container.querySelectorAll('a, h3, h4, div[class*="name"], div[class*="title"]');
-                        for (let t = 0; t < titles.length; t++) {
-                            if (titles[t].innerText.length > 10 && titles[t].innerText !== el.innerText) {
-                                foundTitle = titles[t].innerText; break;
-                            }
-                        }
-                    }
-                    
-                    // Find Quantity
-                    const qtyInput = container.querySelector('input[type="number"]');
-                    if (qtyInput) foundQty = parseInt(qtyInput.value, 10) || 1;
-                    
-                    if (foundImg && foundTitle) {
-                        items.push({
-                            id: Date.now().toString() + Math.random(),
-                            title: foundTitle,
-                            price: parseFloat(el.innerText.replace(/[^0-9.]/g, '')),
-                            image: foundImg,
-                            url: window.location.href,
-                            sku: 'Shein-Heuristic',
-                            provider: 'Shein',
-                            quantity: foundQty
-                        });
-                        break;
-                    }
-                    container = container.parentElement;
-                }
+        }
+        
+        // Get price
+        let price = 0;
+        const priceText = rowContainer.innerText || '';
+        // Look for the current/discounted price (usually US $X.XX or $X.XX)
+        const priceMatches = priceText.match(/US\\s*\\$\\s*([\\d,.]+)|\\$\\s*([\\d,.]+)/gi) || [];
+        if (priceMatches.length > 0) {
+          // Take the first match (usually the current price, not original)
+          const firstPrice = priceMatches[0];
+          const numMatch = firstPrice.match(/([\\d,.]+)/);
+          if (numMatch) {
+            price = parseFloat(numMatch[1].replace(',', '')) || 0;
+          }
+        }
+        if (price === 0) {
+          const anyNum = priceText.match(/(\\d+\\.\\d{2})/);
+          if (anyNum) price = parseFloat(anyNum[1]) || 0;
+        }
+        
+        // AliExpress cart does NOT have individual product images in the DOM
+        // Only store logos are available. Using AliExpress placeholder instead.
+        // The backend can fetch the real image from the product page if needed.
+        const image = 'https://upload.wikimedia.org/wikipedia/commons/thumb/3/3b/Aliexpress_logo.svg/200px-Aliexpress_logo.svg.png'; // AliExpress official logo
+        
+        // Get color and size from SKU options
+        let color = '';
+        let size = '';
+        let options = '';
+        
+        // Look for SKU/option elements
+        const skuEls = rowContainer.querySelectorAll('.comet-v2-btn-borderless, [class*="sku-property"], [class*="sku-info"], [class*="product-sku"]');
+        skuEls.forEach(el => {
+          const text = el.innerText.trim();
+          if (text) {
+            options += (options ? ', ' : '') + text;
+            // Try to identify color and size
+            const lowerText = text.toLowerCase();
+            if (lowerText.includes('color') || lowerText.match(/^(black|white|red|blue|green|pink|yellow|purple|gray|grey|brown|orange)/i)) {
+              color = text;
             }
+            if (lowerText.includes('size') || lowerText.match(/^(xs|s|m|l|xl|xxl|\\d+)$/i) || lowerText.match(/^(\\d+\\s*(cm|mm|inch|g|kg))/i)) {
+              size = text;
+            }
+          }
+        });
+        
+        // Fallback: parse options text for color/size
+        if (!color || !size) {
+          const optionParts = options.split(/[,\\/]/);
+          optionParts.forEach(part => {
+            const p = part.trim();
+            if (!color && p.match(/^(black|white|red|blue|green|pink|yellow|purple|gray|grey|brown|orange|gold|silver)/i)) {
+              color = p;
+            }
+            if (!size && p.match(/^(xs|s|m|l|xl|xxl|\\d+)$/i)) {
+              size = p;
+            }
+          });
         }
-    }
-
-    // Deduplicate
-    const uniqueItems = [];
-    const seenIds = new Set();
-    items.forEach(item => {
-        const key = item.title + item.price; // Composite key
-        if (!seenIds.has(key)) {
-            seenIds.add(key);
-            uniqueItems.push(item);
+        
+        console.log('[AliExpress] Options: ' + options + ' | Color: ' + color + ' | Size: ' + size);
+        
+        // Deduplication key
+        const uniqueKey = productId + '-' + options.replace(/[^a-zA-Z0-9]/g, '');
+        
+        if (title && !seen.has(uniqueKey)) {
+          seen.add(uniqueKey);
+          
+          if (price === 0) {
+            price = 0.01;
+          }
+          
+          items.push({
+            id: productId,
+            title: title,
+            price: price,
+            image: image,
+            url: productUrl || window.location.href,
+            sku: productId,
+            provider: 'AliExpress',
+            quantity: quantity,
+            options: options,
+            color: color,
+            talla: size
+          });
+          console.log('[AliExpress] Added: ' + title.substring(0, 30));
         }
+      } catch (err) {
+        console.error('[AliExpress] Item error:', err.message);
+      }
     });
-
+    
+    console.log('[AliExpress] Total: ' + items.length + ' items');
+    
     window.ReactNativeWebView.postMessage(JSON.stringify({
       type: 'CART_EXTRACTED',
-      payload: uniqueItems
+      payload: items
     }));
   } catch (e) {
+    console.error('[AliExpress] Error:', e.message);
     window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ERROR', message: e.toString() }));
   }
 };
+window.scrapeCart();
 `;
 
-const walmartScraperScript = `
-window.scrapeCart = function() {
+const neweggScraperScript = `
+window.scrapeCart = function () {
   try {
     const items = [];
-    
-    // Strategy 1: Heuristic - Find prices and look around
-    // This is more robust against class name changes
-    const allElements = document.getElementsByTagName('*');
-    for (let i = 0; i < allElements.length; i++) {
-        const el = allElements[i];
-        // Check if element has text starting with $ and is visible
-        if (el.innerText && el.innerText.trim().match(/^\\$[0-9,]+(\\.[0-9]{2})?$/) && el.children.length === 0) {
-            
-            // Found a price! Now let's look for a container
-            let container = el.parentElement;
-            let foundImg = null;
-            let foundTitle = null;
-            
-            // Traverse up 5 levels to find a container that has an image and a title
-            for (let k = 0; k < 5; k++) {
-                if (!container) break;
-                
-                // Look for image in this container
-                const imgs = container.getElementsByTagName('img');
-                for (let j = 0; j < imgs.length; j++) {
-                    if (imgs[j].width > 50 && imgs[j].height > 50) { // Filter out tiny icons
-                        foundImg = imgs[j].src;
-                        break;
-                    }
-                }
-                
-                // Look for title (usually a link or heading)
-                const titles = container.querySelectorAll('a, h2, h3, span[class*="name"], span[class*="title"]');
-                for (let t = 0; t < titles.length; t++) {
-                     if (titles[t].innerText.length > 10 && titles[t].innerText !== el.innerText) {
-                         foundTitle = titles[t].innerText;
-                         // Try to get link
-                         if (titles[t].tagName === 'A') {
-                             // foundLink = titles[t].href; 
-                         }
-                         break;
-                     }
-                }
-                
-                // Look for quantity
-                let foundQty = 1;
-                // Try 1: Input or Select with numeric value
-                const qtyInput = container.querySelector('input[type="number"], input[inputmode="numeric"], select[aria-label*="Quantity"], select');
-                if (qtyInput && qtyInput.value) {
-                    foundQty = parseInt(qtyInput.value, 10) || 1;
-                } 
-                
-                // Try 2: specific Walmart quantity data attribute
-                if (foundQty === 1) {
-                     const qtyData = container.querySelector('[data-automation-id="quantity"]');
-                     if (qtyData) {
-                         // It might be a div with text or an input
-                         foundQty = parseInt(qtyData.innerText || qtyData.value, 10) || 1;
-                     }
-                }
+    // Newegg Selectors
+    const cartItems = document.querySelectorAll('.row-body, .item-cell, .cart-item');
 
-                // Try 3: Text search for "Qty: X"
-                if (foundQty === 1) {
-                    const qtyMatch = container.innerText.match(/Qty:?\s*(\d+)/i);
-                    if (qtyMatch) {
-                        foundQty = parseInt(qtyMatch[1], 10);
-                    }
-                }
-                
-                if (foundImg && foundTitle) {
-                    // We found a match!
-                    items.push({
-                        id: Date.now().toString() + Math.random(),
-                        title: foundTitle,
-                        price: parseFloat(el.innerText.replace(/[^0-9.]/g, '')),
-                        image: foundImg,
-                        url: window.location.href,
-                        sku: 'N/A',
-                        provider: 'Walmart',
-                        quantity: foundQty,
-                        options: (function() {
-                            const opts = [];
-                            const variantText = container.innerText.match(/(Actual Color|Clothing Size|Size|Color):?\s*([^\n]+)/g);
-                            if (variantText) {
-                                variantText.forEach(v => opts.push(v));
-                            }
-                            return opts.join(', ');
-                        })()
-                    });
-                    break; // Stop traversing up for this price
-                }
-                container = container.parentElement;
-            }
-        }
-    }
-
-    // Deduplicate items based on title
-    const uniqueItems = [];
-    const titles = new Set();
-    items.forEach(item => {
-        if (!titles.has(item.title)) {
-            titles.add(item.title);
-            uniqueItems.push(item);
-        }
-    });
-
-    if (uniqueItems.length === 0) {
-        window.ReactNativeWebView.postMessage(JSON.stringify({ 
-            type: 'ERROR', 
-            message: 'Walmart Scraper: Found 0 items. Debug: Scanned ' + allElements.length + ' elements.' 
-        }));
-    } else {
-        window.ReactNativeWebView.postMessage(JSON.stringify({
-            type: 'CART_EXTRACTED',
-            payload: uniqueItems
-        }));
-    }
-  } catch (e) {
-    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ERROR', message: 'Script Error: ' + e.toString() }));
-  }
-};
-`;
-
-const temuScraperScript = `
-window.scrapeCart = function() {
-  try {
-    const items = [];
-    // Temu Selectors - Updated
-    const cartItems = document.querySelectorAll('.cart-item, .goods-item, [data-type="cart-item"]');
-    
-    cartItems.forEach(item => {
-      const titleEl = item.querySelector('.goods-title, .title');
-      const priceEl = item.querySelector('.goods-price, .price');
+    cartItems.forEach((item, index) => {
+      const titleEl = item.querySelector('.item-title, .title');
+      const priceEl = item.querySelector('.price-current, .price');
       const imageEl = item.querySelector('img');
-      
+
+      // Quantity
+      let quantity = 1;
+      const qtyInput = item.querySelector('input[type="number"], .item-qty-input');
+      if (qtyInput) {
+        quantity = parseInt(qtyInput.value, 10) || 1;
+      }
+
       if (titleEl) {
         items.push({
-          id: Date.now().toString() + Math.random(),
+          id: Date.now().toString() + index,
           title: titleEl.innerText,
           price: priceEl ? parseFloat(priceEl.innerText.replace(/[^0-9.]/g, '')) : 0,
           image: imageEl ? imageEl.src : '',
           url: window.location.href,
           sku: 'N/A',
-          provider: 'Temu',
-          quantity: 1,
-          options: (function() {
-              const opts = [];
-              const skuEls = item.querySelectorAll('.goods-sku, .sku-text');
-              skuEls.forEach(el => opts.push(el.innerText));
-              return opts.join(', ');
-          })()
+          provider: 'Newegg',
+          quantity: quantity,
+          options: ''
         });
       }
     });
@@ -462,65 +395,46 @@ window.scrapeCart = function() {
     window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ERROR', message: e.toString() }));
   }
 };
-`;
-
-const aliexpressScraperScript = `
-window.scrapeCart = function() {
-    // Placeholder for AliExpress
-    window.ReactNativeWebView.postMessage(JSON.stringify({
-      type: 'CART_EXTRACTED',
-      payload: []
-    }));
-};
-`;
-
-const neweggScraperScript = `
-window.scrapeCart = function() {
-    // Placeholder for Newegg
-    window.ReactNativeWebView.postMessage(JSON.stringify({
-      type: 'CART_EXTRACTED',
-      payload: []
-    }));
-};
+window.scrapeCart();
 `;
 
 const genericScraperScript = `
-window.scrapeCart = function() {
+window.scrapeCart = function () {
   try {
     // Generic fallback: try to find common cart patterns
     const items = [];
     // Look for elements that might be cart items
     const potentialItems = document.querySelectorAll('li, div[class*="item"], div[class*="product"], tr');
-    
+
     potentialItems.forEach(item => {
-        // Heuristic: must have an image, a price-like string, and some text
-        const img = item.querySelector('img');
-        const priceText = item.innerText.match(/[$€£¥][0-9,.]+/);
-        const titleElement = item.querySelector('h2, h3, h4, a');
-        
-        if (img && priceText && titleElement && img.width > 50) { // Avoid tiny icons
-             items.push({
-                id: Date.now().toString() + Math.random(),
-                title: titleElement.innerText.substring(0, 50),
-                price: parseFloat(priceText[0].replace(/[^0-9.]/g, '')),
-                image: img.src,
-                url: window.location.href,
-                sku: 'Generic',
-                provider: 'Unknown',
-                quantity: 1,
-                options: (function() {
-                    const text = item.innerText;
-                    const opts = [];
-                    const color = text.match(/(Color|Colour|Cor):?\s*([A-Za-z\s\/]+)/i);
-                    const size = text.match(/(Size|Talla|Tamanho):?\s*([A-Za-z0-9\s\.]+)/i);
-                    if (color) opts.push(color[0]);
-                    if (size) opts.push(size[0]);
-                    return opts.join(', ');
-                })()
-             });
-        }
+      // Heuristic: must have an image, a price-like string, and some text
+      const img = item.querySelector('img');
+      const priceText = item.innerText.match(/[$€£¥][0-9,.]+/);
+      const titleElement = item.querySelector('h2, h3, h4, a');
+
+      if (img && priceText && titleElement && img.width > 50) { // Avoid tiny icons
+        items.push({
+          id: Date.now().toString() + Math.random(),
+          title: titleElement.innerText.substring(0, 50),
+          price: parseFloat(priceText[0].replace(/[^0-9.]/g, '')),
+          image: img.src,
+          url: window.location.href,
+          sku: 'Generic',
+          provider: 'Unknown',
+          quantity: 1,
+          options: (function () {
+            const text = item.innerText;
+            const opts = [];
+            const color = text.match(/(Color|Colour|Cor):?\s*([A-Za-z\s\/]+)/i);
+            const size = text.match(/(Size|Talla|Tamanho):?\s*([A-Za-z0-9\s\.]+)/i);
+            if (color) opts.push(color[0]);
+            if (size) opts.push(size[0]);
+            return opts.join(', ');
+          })()
+        });
+      }
     });
-    
+
     // Deduplicate based on title
     const uniqueItems = Array.from(new Map(items.map(item => [item.title, item])).values());
 
@@ -529,7 +443,8 @@ window.scrapeCart = function() {
       payload: uniqueItems.slice(0, 10) // Limit to avoid junk
     }));
   } catch (e) {
-      window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ERROR', message: e.toString() }));
+    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ERROR', message: e.toString() }));
   }
 };
+window.scrapeCart();
 `;
