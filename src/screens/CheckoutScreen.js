@@ -12,7 +12,8 @@ import {
     Modal,
     TextInput,
     ActivityIndicator,
-    Linking
+    Linking,
+    Keyboard
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useCart } from '../context/CartContext';
@@ -380,6 +381,10 @@ const CheckoutScreen = ({ navigation }) => {
             console.log('[Checkout] Using saleId:', updatedSaleId, 'Total from refresh:', refreshResult.total);
 
             setIsCalculating(false);
+
+            // Dismiss keyboard before navigation to prevent InputMethodManager crash
+            Keyboard.dismiss();
+
             navigation.navigate('Payment', {
                 paymentMethod,
                 saleId: updatedSaleId

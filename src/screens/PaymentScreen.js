@@ -95,8 +95,18 @@ const PaymentScreen = ({ navigation, route }) => {
         // Use pago_hoy from purchaseConditions as the base USD amount
         const pagoHoyUsd = purchaseConditions?.pago_hoy || 0;
         const tasa = paymentAmount?.tasa_cambio || paymentAmount?.detalle?.tasa_aplicada || 1;
-        const amountBs = pagoHoyUsd * tasa;
+
+        // Prefer monto_bs from API response if available, otherwise calculate
+        const amountBs = paymentAmount?.monto_bs || paymentAmount?.monto || (pagoHoyUsd * tasa);
         const amountUsd = pagoHoyUsd;
+
+        console.log('[PaymentScreen] Navigating with amounts:', {
+            amountBs,
+            amountUsd,
+            tasa,
+            apiMontoBs: paymentAmount?.monto_bs,
+            apiMonto: paymentAmount?.monto,
+        });
 
         navigation.navigate('PaymentConfirmation', {
             saleId,

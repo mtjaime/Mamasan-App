@@ -35,6 +35,15 @@ const PaymentConfirmationScreen = ({ navigation, route }) => {
         isQuotaPayment
     } = route.params || {};
 
+    console.log('[PaymentConfirmation] Route params:', {
+        saleId,
+        currency,
+        paymentAmount,
+        paymentAmountBs,
+        paymentAmountUsd,
+        tasaCambio,
+    });
+
     const [loading, setLoading] = useState(true);
     const [paymentMethods, setPaymentMethods] = useState([]);
     const [banks, setBanks] = useState([]);
@@ -43,8 +52,9 @@ const PaymentConfirmationScreen = ({ navigation, route }) => {
     const [selectedBank, setSelectedBank] = useState(null);
 
     // Dynamic payment amount from API - use the correct amount based on currency
+    // Initialize with paymentAmount which already contains the correct value for the selected currency
     const [displayAmount, setDisplayAmount] = useState(
-        currency === 'bs' ? paymentAmountBs : paymentAmount
+        paymentAmount || (currency === 'bs' ? paymentAmountBs : paymentAmountUsd) || 0
     );
 
     // Form fields

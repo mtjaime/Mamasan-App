@@ -380,6 +380,60 @@ export const api = {
             return { success: false, error: error.message };
         }
     },
+
+    appleLogin: async (identityToken) => {
+        try {
+            console.log('[API] Attempting Apple Login with token...');
+            const response = await fetch(`${API_URL}/mobile-auth`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'apple_signin', identity_token: identityToken }),
+            });
+            const data = await response.json();
+            console.log('API Apple Login Response:', JSON.stringify(data, null, 2));
+
+            if (data.success && data.data?.session?.access_token) {
+                console.log('API: Saving Apple session token');
+                await AsyncStorage.setItem('userToken', data.data.session.access_token);
+                await AsyncStorage.setItem('userData', JSON.stringify(data.data.user));
+            }
+
+            return data;
+        } catch (error) {
+            console.error('Apple Login error:', error);
+            return { success: false, error: error.message };
+        }
+    },
+
+    deleteAccount: async () => {
+        try {
+            const token = await AsyncStorage.getItem('userToken');
+            if (!token) throw new Error('No token found');
+
+            console.log('[API] Requesting account deletion...');
+            const response = await fetch(`${API_URL}/mobile-auth`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ action: 'delete_account' }),
+            });
+            const data = await response.json();
+            console.log('API Delete Account Response:', JSON.stringify(data, null, 2));
+
+            if (data.success) {
+                await AsyncStorage.removeItem('userToken');
+                await AsyncStorage.removeItem('userData');
+            }
+
+            return data;
+        } catch (error) {
+            console.error('Delete Account error:', error);
+            return { success: false, error: error.message };
+        }
+    },
+
     addAddress: async (addressData) => {
         try {
             const token = await AsyncStorage.getItem('userToken');

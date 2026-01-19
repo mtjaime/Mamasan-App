@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     View,
     Text,
@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import CustomAlert from '../components/CustomAlert';
 import { api } from '../services/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as AppleAuthentication from 'expo-apple-authentication';
 
 import Constants from 'expo-constants';
 
@@ -68,31 +69,42 @@ const LoginScreen = ({ navigation }) => {
     const [alertVisible, setAlertVisible] = useState(false);
     const [alertConfig, setAlertConfig] = useState({ title: '', message: '', buttons: [] });
 
-    const { signIn, signUp, googleSignIn } = useAuth();
+    const { signIn, signUp, googleSignIn, appleSignIn } = useAuth();
     const [googleLoading, setGoogleLoading] = useState(false);
+    const [appleLoading, setAppleLoading] = useState(false);
+    const [appleAuthAvailable, setAppleAuthAvailable] = useState(false);
+
+    // Check if Apple Authentication is available
+    useEffect(() => {
+        if (Platform.OS === 'ios') {
+            AppleAuthentication.isAvailableAsync().then(setAppleAuthAvailable);
+        }
+    }, []);
 
     const handleGoogleLogin = async () => {
         if (!isGoogleSignInAvailable) {
             showAlert(
                 'No disponible',
-                'Google Sign-In requiere una build personalizada. No está disponible en Expo Go.'
+                'Google Sign-In no está disponible en este dispositivo. Por favor usa otro método de inicio de sesión.'
             );
             return;
         }
 
         setGoogleLoading(true);
         try {
-            await GoogleSignin.hasPlayServices();
+            // Skip Play Services check on iOS (not applicable)
+            if (Platform.OS === 'android') {
+                await GoogleSignin.hasPlayServices();
+            }
             const userInfo = await GoogleSignin.signIn();
             console.log('Google User Info:', userInfo);
 
-            const { idToken } = userInfo.data || userInfo; // Check for newer structure
+            const { idToken } = userInfo.data || userInfo;
 
             if (!idToken) {
                 throw new Error('No ID Token found');
             }
 
-            // Use the googleSignIn from AuthContext which handles token storage properly
             console.log('Calling googleSignIn from AuthContext with idToken...');
             await googleSignIn(idToken);
             console.log('Google Sign-In successful!');
@@ -100,18 +112,47 @@ const LoginScreen = ({ navigation }) => {
             console.error('Google Sign-In Error:', error);
             console.error('Error code:', error.code);
             console.error('Error message:', error.message);
-            if (error.code === statusCodes.SIGN_IN_CANCELLED) {
-                // user cancelled the login flow
-            } else if (error.code === statusCodes.IN_PROGRESS) {
-                // operation (e.g. sign in) is in progress already
-            } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+            if (error.code === statusCodes?.SIGN_IN_CANCELLED) {
+                // user cancelled the login flow - do nothing
+            } else if (error.code === statusCodes?.IN_PROGRESS) {
+                // operation in progress - do nothing
+            } else if (error.code === statusCodes?.PLAY_SERVICES_NOT_AVAILABLE) {
                 showAlert('Error', 'Google Play Services no disponible');
             } else {
-                // Show the actual error for debugging
-                showAlert('Error de Google Sign-In', `${error.message || 'Error desconocido'}\n\nCódigo: ${error.code || 'N/A'}`);
+                // Friendly error message for users
+                showAlert('Error', 'No se pudo iniciar sesión con Google. Por favor intenta con otro método de inicio de sesión.');
             }
         } finally {
             setGoogleLoading(false);
+        }
+    };
+
+    const handleAppleLogin = async () => {
+        setAppleLoading(true);
+        try {
+            const credential = await AppleAuthentication.signInAsync({
+                requestedScopes: [
+                    AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+                    AppleAuthentication.AppleAuthenticationScope.EMAIL,
+                ],
+            });
+            console.log('Apple credential:', credential);
+
+            if (credential.identityToken) {
+                await appleSignIn(credential.identityToken);
+                console.log('Apple Sign-In successful!');
+            } else {
+                throw new Error('No identity token received');
+            }
+        } catch (error) {
+            console.error('Apple Sign-In Error:', error);
+            if (error.code === 'ERR_REQUEST_CANCELED') {
+                // User cancelled - do nothing
+            } else {
+                showAlert('Error', 'No se pudo iniciar sesión con Apple. Por favor intenta de nuevo.');
+            }
+        } finally {
+            setAppleLoading(false);
         }
     };
 
@@ -259,12 +300,32 @@ const LoginScreen = ({ navigation }) => {
                         <TouchableOpacity
                             style={[styles.button, styles.googleButton]}
                             onPress={handleGoogleLogin}
-                            disabled={loading || googleLoading}
+                            disabled={loading || googleLoading || appleLoading}
                         >
                             <Ionicons name="logo-google" size={24} color="#333" style={{ marginRight: 10 }} />
                             <Text style={styles.googleButtonText}>Acceder con Google</Text>
                             {googleLoading && <ActivityIndicator size="small" color="#333" style={{ marginLeft: 10 }} />}
                         </TouchableOpacity>
+                    )}
+
+                    {/* Apple Sign-In button */}
+                    {isLogin && appleAuthAvailable && (
+                        <View style={styles.appleButtonContainer}>
+                            <AppleAuthentication.AppleAuthenticationButton
+                                buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+                                buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+                                cornerRadius={12}
+                                style={styles.appleButton}
+                                onPress={handleAppleLogin}
+                            />
+                            {appleLoading && (
+                                <ActivityIndicator
+                                    size="small"
+                                    color="#fff"
+                                    style={styles.appleLoadingIndicator}
+                                />
+                            )}
+                        </View>
                     )}
 
                     <TouchableOpacity
@@ -405,6 +466,20 @@ const styles = StyleSheet.create({
     },
     googleButtonTextDisabled: {
         color: '#999',
+    },
+    appleButtonContainer: {
+        marginTop: 15,
+        position: 'relative',
+    },
+    appleButton: {
+        height: 55,
+        width: '100%',
+    },
+    appleLoadingIndicator: {
+        position: 'absolute',
+        right: 15,
+        top: '50%',
+        marginTop: -10,
     },
 });
 

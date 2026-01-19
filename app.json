@@ -15,10 +15,11 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.mamasan.app",
-      "buildNumber": "1",
-      "deploymentTarget": "15.1",
+      "buildNumber": "2",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSCameraUsageDescription": "Mama SAN necesita acceso a tu cámara para tomar fotos de comprobantes de pago cuando realices un abono a tu cuenta.",
+        "NSMicrophoneUsageDescription": "Mama SAN no utiliza el micrófono directamente. Este permiso es requerido por algunas bibliotecas de terceros utilizadas en la aplicación."
       }
     },
     "android": {
@@ -33,8 +34,7 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.mamasan.app",
-      "versionCode": 14,
-      "useNextNotificationsApi": true
+      "versionCode": 15
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -46,7 +46,10 @@
           "icon": "./assets/icon.png",
           "color": "#FF007F"
         }
-      ]
+      ],
+      "expo-font",
+      "@react-native-google-signin/google-signin",
+      "expo-apple-authentication"
     ],
     "extra": {
       "eas": {

@@ -11,15 +11,18 @@ import {
     Linking,
     Platform,
     StatusBar,
-    Alert
+    Alert,
+    ActivityIndicator
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
+import { api } from '../services/api';
 
 const ProfileScreen = () => {
     const navigation = useNavigation();
     const { user, signOut } = useAuth();
+    const [deletingAccount, setDeletingAccount] = useState(false);
 
     // Hardcoded light theme since dark mode is removed
     const theme = {
@@ -43,9 +46,48 @@ const ProfileScreen = () => {
                     onPress: async () => {
                         try {
                             await signOut();
-                            // Optional: Navigate to home or stay on profile
                         } catch (error) {
                             console.error("Error signing out:", error);
+                        }
+                    }
+                }
+            ]
+        );
+    };
+
+    const handleDeleteAccount = () => {
+        Alert.alert(
+            "Eliminar Cuenta",
+            "¿Estás seguro? Esta acción es permanente y no se puede deshacer. Se eliminarán todos tus datos, historial de compras y configuraciones.",
+            [
+                { text: "Cancelar", style: "cancel" },
+                {
+                    text: "Eliminar",
+                    style: "destructive",
+                    onPress: async () => {
+                        setDeletingAccount(true);
+                        try {
+                            const result = await api.deleteAccount();
+                            if (result.success) {
+                                await signOut();
+                                Alert.alert(
+                                    "Cuenta Eliminada",
+                                    "Tu cuenta ha sido eliminada exitosamente. Lamentamos verte partir."
+                                );
+                            } else {
+                                Alert.alert(
+                                    "Error",
+                                    result.error || "No se pudo eliminar la cuenta. Por favor intenta de nuevo."
+                                );
+                            }
+                        } catch (error) {
+                            console.error("Error deleting account:", error);
+                            Alert.alert(
+                                "Error",
+                                "Ocurrió un error al eliminar tu cuenta. Por favor intenta de nuevo."
+                            );
+                        } finally {
+                            setDeletingAccount(false);
                         }
                     }
                 }
@@ -115,9 +157,27 @@ const ProfileScreen = () => {
                 <Text style={[styles.supportEmail, { color: theme.subText }]}>info@mamasan.app</Text>
 
                 {user ? (
-                    <TouchableOpacity style={[styles.loginButton, styles.logoutButton]} onPress={handleLogout}>
-                        <Text style={styles.loginButtonText}>Cerrar Sesión</Text>
-                    </TouchableOpacity>
+                    <>
+                        <TouchableOpacity
+                            style={[styles.loginButton, styles.logoutButton]}
+                            onPress={handleLogout}
+                            disabled={deletingAccount}
+                        >
+                            <Text style={styles.loginButtonText}>Cerrar Sesión</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={styles.deleteButton}
+                            onPress={handleDeleteAccount}
+                            disabled={deletingAccount}
+                        >
+                            {deletingAccount ? (
+                                <ActivityIndicator color="#DC2626" size="small" />
+                            ) : (
+                                <Text style={styles.deleteButtonText}>Eliminar Cuenta</Text>
+                            )}
+                        </TouchableOpacity>
+                    </>
                 ) : (
                     <TouchableOpacity style={styles.loginButton} onPress={() => navigation.navigate('Login')}>
                         <Text style={styles.loginButtonText}>Iniciar Sesión</Text>
@@ -224,6 +284,20 @@ const styles = StyleSheet.create({
         color: '#666',
         marginLeft: 10,
         marginBottom: 20,
+    },
+    deleteButton: {
+        marginTop: 15,
+        padding: 15,
+        borderRadius: 10,
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: '#DC2626',
+        backgroundColor: 'transparent',
+    },
+    deleteButtonText: {
+        color: '#DC2626',
+        fontSize: 14,
+        fontWeight: '500',
     },
 });
 

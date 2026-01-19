@@ -119,6 +119,41 @@ export const AuthProvider = ({ children }) => {
         }
     };
 
+    const appleSignIn = async (identityToken) => {
+        console.log('AuthContext: Attempting Apple Login');
+        const response = await api.appleLogin(identityToken);
+        if (response.success) {
+            console.log('AuthContext: Apple Login success', response.data?.user?.email);
+
+            // After successful Apple login, fetch full user data from /mobile-home
+            try {
+                console.log('AuthContext: Fetching full user data from mobile-home...');
+                const homeData = await api.getHomeData();
+                if (homeData.success && homeData.data?.user) {
+                    console.log('AuthContext: Got full user data, updating user state');
+                    const fullUserData = {
+                        ...response.data.user,
+                        ...homeData.data.user,
+                    };
+                    setUser(fullUserData);
+                    await AsyncStorage.setItem('userData', JSON.stringify(fullUserData));
+                    return { ...response.data, user: fullUserData };
+                } else {
+                    console.log('AuthContext: Could not fetch home data, using auth response user');
+                    setUser(response.data.user);
+                    return response.data;
+                }
+            } catch (homeError) {
+                console.error('AuthContext: Error fetching home data:', homeError);
+                setUser(response.data.user);
+                return response.data;
+            }
+        } else {
+            console.error('AuthContext: Apple Login failed:', response.error);
+            throw new Error(response.error || 'Apple Login failed');
+        }
+    };
+
     const signOut = async () => {
         await api.logout();
         setUser(null);
@@ -131,6 +166,7 @@ export const AuthProvider = ({ children }) => {
         signUp,
         signOut,
         googleSignIn,
+        appleSignIn,
     };
 
     return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

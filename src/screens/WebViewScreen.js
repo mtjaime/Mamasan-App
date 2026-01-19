@@ -17,7 +17,8 @@ import {
     Dimensions,
     Modal,
     Image,
-    Linking
+    Linking,
+    InteractionManager
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Ionicons } from '@expo/vector-icons';
@@ -32,21 +33,33 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const MarqueeBanner = () => {
     const translateX = useRef(new Animated.Value(SCREEN_WIDTH)).current;
+    const animationRef = useRef(null);
 
     useEffect(() => {
         const startAnimation = () => {
             translateX.setValue(SCREEN_WIDTH);
-            Animated.loop(
+            // Store animation reference for cleanup
+            animationRef.current = Animated.loop(
                 Animated.timing(translateX, {
                     toValue: -SCREEN_WIDTH * 1.5, // Scroll completely off screen
                     duration: 15000, // Slower speed
                     easing: Easing.linear,
                     useNativeDriver: true,
                 })
-            ).start();
+            );
+            animationRef.current.start();
         };
 
         startAnimation();
+
+        // CRITICAL: Cleanup animation on unmount to prevent VSync/Choreographer ANR
+        return () => {
+            if (animationRef.current) {
+                animationRef.current.stop();
+                animationRef.current = null;
+            }
+            translateX.stopAnimation();
+        };
     }, []);
 
     return (
@@ -62,12 +75,22 @@ const WebViewScreen = ({ route, navigation }) => {
     const { url, name } = route.params;
     const [currentUrl, setCurrentUrl] = useState(url);
     const webViewRef = useRef(null);
+    const isMountedRef = useRef(true); // Track if component is mounted to prevent state updates after unmount
     const [canGoBack, setCanGoBack] = useState(false);
     const [canGoForward, setCanGoForward] = useState(false);
     const { mergeCart, clearCart, cartItems, fetchCart } = useCart();
     const [isLoadingExtraction, setIsLoadingExtraction] = useState(false);
     const [isNavigatingToCart, setIsNavigatingToCart] = useState(false);
     const [debugLogs, setDebugLogs] = useState([]);
+
+    // Cleanup on unmount to prevent state updates after unmount (fixes InputMethodManager crash)
+    useEffect(() => {
+        return () => {
+            isMountedRef.current = false;
+            // Clear WebView ref to prevent any pending operations
+            webViewRef.current = null;
+        };
+    }, []);
     const [showTutorial, setShowTutorial] = useState(false);
 
     // Shein Popup State
@@ -156,6 +179,9 @@ const WebViewScreen = ({ route, navigation }) => {
     }, [canGoBack]);
 
     const handleMessage = (event) => {
+        // Check if component is still mounted before processing
+        if (!isMountedRef.current) return;
+
         console.log('WebView Message Raw:', event.nativeEvent.data);
         try {
             const data = JSON.parse(event.nativeEvent.data);
@@ -174,226 +200,231 @@ const WebViewScreen = ({ route, navigation }) => {
             }
 
             // Loading will be dismissed when popup is shown, not immediately
-            setIsNavigatingToCart(false); // Reset nav flag
+            if (isMountedRef.current) setIsNavigatingToCart(false); // Reset nav flag
 
             if (data.type === 'CART_EXTRACTED') {
                 addLog(`Success: ${data.payload.length} items`);
-                const newItems = data.payload;
 
-                // Validate Items - handle both old format (price, quantity) and new format (product_price, cantidad)
-                const validItems = newItems.filter(item => {
-                    const p = parseFloat(item.price || item.product_price);
-                    const q = parseInt(item.quantity || item.cantidad, 10);
-                    const hasTitle = !!(item.title || item.product_name);
-                    return hasTitle && !isNaN(p) && p > 0 && !isNaN(q) && q > 0;
-                });
+                // Use InteractionManager to defer heavy processing (prevents ANR)
+                InteractionManager.runAfterInteractions(() => {
+                    if (!isMountedRef.current) return;
+                    const newItems = data.payload;
 
-                if (validItems.length < newItems.length) {
-                    addLog(`Warning: ${newItems.length - validItems.length} items had invalid price/qty`);
-                }
-
-                const totalQty = validItems.reduce((sum, item) => sum + (parseInt(item.quantity, 10) || 1), 0);
-
-                if (newItems.length === 0) {
-                    setIsLoadingExtraction(false);
-                    setAlertConfig({
-                        title: 'No se detectaron productos',
-                        message: 'No pudimos leer los productos de tu carrito. Asegúrate de estar en la página del carrito y que los productos sean visibles.',
-                        buttons: [{ text: 'OK', onPress: closeAlert }]
+                    // Validate Items - handle both old format (price, quantity) and new format (product_price, cantidad)
+                    const validItems = newItems.filter(item => {
+                        const p = parseFloat(item.price || item.product_price);
+                        const q = parseInt(item.quantity || item.cantidad, 10);
+                        const hasTitle = !!(item.title || item.product_name);
+                        return hasTitle && !isNaN(p) && p > 0 && !isNaN(q) && q > 0;
                     });
-                    setAlertVisible(true);
-                    return;
-                }
 
-                if (validItems.length === 0) {
-                    setIsLoadingExtraction(false);
-                    setAlertConfig({
-                        title: 'Error de Datos',
-                        message: 'Se encontraron productos pero sin precio válido. Intenta recargar la página.',
-                        buttons: [{ text: 'OK', onPress: closeAlert }]
-                    });
-                    setAlertVisible(true);
-                    return;
-                }
-
-                const processMerge = async (shouldClear) => {
-                    // Analyze Products via API
-                    const allowed = [];
-                    const prohibited = [];
-
-                    // Show a toast or log that we are verifying items
-                    addLog('Verificando productos prohibidos...');
-
-                    for (const item of validItems) {
-                        try {
-                            const itemTitle = item.title || item.product_name;
-                            const itemPrice = item.price || item.product_price;
-                            const itemUrl = item.url || item.product_url;
-                            const checkResult = await api.checkProhibitedProduct(
-                                itemTitle,
-                                item.description || '',
-                                { price: itemPrice, url: itemUrl, provider: item.provider }
-                            );
-
-                            if (checkResult.isProhibited) {
-                                console.log('[WebView] Item marked as prohibited:', JSON.stringify(item, null, 2));
-                                prohibited.push({
-                                    ...item,
-                                    sku: item.sku || item.asin || item.id || null,
-                                    asin: item.sku || item.asin || null,
-                                    reason: checkResult.reason || 'Producto prohibido por regulaciones.',
-                                    category: checkResult.category || null,
-                                    keyword: checkResult.keyword || null
-                                });
-                            } else if (checkResult.error) {
-                                // API returned an error (e.g. validation)
-                                addLog(`API Check Error: ${checkResult.error}`);
-                                // Treat as allowed for now but warn? Or maybe block if we want strictness?
-                                // Let's block it if it's an error to be safe, or at least alert.
-                                // Actually, if "productName is required" and we sent it, something is wrong.
-                                // Let's treat as allowed to avoid blocking valid items due to glitches, but log it.
-                                allowed.push({
-                                    ...item,
-                                    weight: 1.0,
-                                    volume: 0.01
-                                });
-                            } else {
-                                // Allowed
-                                allowed.push({
-                                    ...item,
-                                    weight: 1.0,
-                                    volume: 0.01
-                                });
-                            }
-                        } catch (e) {
-                            console.error("Error checking product:", e);
-                            // If check fails, we treat it as allowed but log it. 
-                            // Ideally, we should maybe warn the user, but for now let's keep it allowed 
-                            // to avoid blocking users due to API errors.
-                            // However, let's log it visibly.
-                            addLog(`Check Error: ${e.message}`);
-                            allowed.push({
-                                ...item,
-                                weight: 1.0,
-                                volume: 0.01
-                            });
-                        }
+                    if (validItems.length < newItems.length) {
+                        addLog(`Warning: ${newItems.length - validItems.length} items had invalid price/qty`);
                     }
 
-                    // Process allowed items first (add to cart)
-                    let successCount = 0;
-                    let failCount = 0;
+                    const totalQty = validItems.reduce((sum, item) => sum + (parseInt(item.quantity, 10) || 1), 0);
 
-                    if (allowed.length > 0) {
-                        // API Integration: Add items one by one
-                        for (const item of allowed) {
+                    if (newItems.length === 0) {
+                        setIsLoadingExtraction(false);
+                        setAlertConfig({
+                            title: 'No se detectaron productos',
+                            message: 'No pudimos leer los productos de tu carrito. Asegúrate de estar en la página del carrito y que los productos sean visibles.',
+                            buttons: [{ text: 'OK', onPress: closeAlert }]
+                        });
+                        setAlertVisible(true);
+                        return;
+                    }
+
+                    if (validItems.length === 0) {
+                        setIsLoadingExtraction(false);
+                        setAlertConfig({
+                            title: 'Error de Datos',
+                            message: 'Se encontraron productos pero sin precio válido. Intenta recargar la página.',
+                            buttons: [{ text: 'OK', onPress: closeAlert }]
+                        });
+                        setAlertVisible(true);
+                        return;
+                    }
+
+                    const processMerge = async (shouldClear) => {
+                        // Analyze Products via API
+                        const allowed = [];
+                        const prohibited = [];
+
+                        // Show a toast or log that we are verifying items
+                        addLog('Verificando productos prohibidos...');
+
+                        for (const item of validItems) {
                             try {
-                                const quantity = parseInt(item.quantity || item.cantidad, 10) || 1;
                                 const itemTitle = item.title || item.product_name;
                                 const itemPrice = item.price || item.product_price;
-                                const itemImage = item.image || item.product_image;
                                 const itemUrl = item.url || item.product_url;
+                                const checkResult = await api.checkProhibitedProduct(
+                                    itemTitle,
+                                    item.description || '',
+                                    { price: itemPrice, url: itemUrl, provider: item.provider }
+                                );
 
-                                // Construct product object for API
-                                const productObj = {
-                                    product_name: itemTitle,
-                                    product_price: itemPrice,
-                                    product_image: itemImage,
-                                    product_url: itemUrl || url,
-                                    source: item.provider ? item.provider.toLowerCase() : 'external',
-                                    asin: item.asin || (item.sku !== 'N/A' ? item.sku : item.id),
-                                    color: item.color || '',
-                                    talla: item.talla || item.size || ''
-                                };
-
-                                addLog(`Sending: ${(itemTitle || 'Unknown').substring(0, 20)}...`);
-                                console.log(`[WebView] Sending payload:`, JSON.stringify(productObj, null, 2));
-                                const response = await api.addToMobileCart(productObj, quantity);
-
-                                if (response.success) {
-                                    addLog(`API Success!`, 'success');
-                                    successCount++;
+                                if (checkResult.isProhibited) {
+                                    console.log('[WebView] Item marked as prohibited:', JSON.stringify(item, null, 2));
+                                    prohibited.push({
+                                        ...item,
+                                        sku: item.sku || item.asin || item.id || null,
+                                        asin: item.sku || item.asin || null,
+                                        reason: checkResult.reason || 'Producto prohibido por regulaciones.',
+                                        category: checkResult.category || null,
+                                        keyword: checkResult.keyword || null
+                                    });
+                                } else if (checkResult.error) {
+                                    // API returned an error (e.g. validation)
+                                    addLog(`API Check Error: ${checkResult.error}`);
+                                    // Treat as allowed for now but warn? Or maybe block if we want strictness?
+                                    // Let's block it if it's an error to be safe, or at least alert.
+                                    // Actually, if "productName is required" and we sent it, something is wrong.
+                                    // Let's treat as allowed to avoid blocking valid items due to glitches, but log it.
+                                    allowed.push({
+                                        ...item,
+                                        weight: 1.0,
+                                        volume: 0.01
+                                    });
                                 } else {
-                                    const errorMsg = response.error?.message || JSON.stringify(response.error) || 'Unknown error';
-                                    addLog(`API Error: ${errorMsg}`, 'error');
-                                    console.error(`Failed to add item: ${itemTitle || item.title || 'Unknown'}`, response.error);
+                                    // Allowed
+                                    allowed.push({
+                                        ...item,
+                                        weight: 1.0,
+                                        volume: 0.01
+                                    });
+                                }
+                            } catch (e) {
+                                console.error("Error checking product:", e);
+                                // If check fails, we treat it as allowed but log it. 
+                                // Ideally, we should maybe warn the user, but for now let's keep it allowed 
+                                // to avoid blocking users due to API errors.
+                                // However, let's log it visibly.
+                                addLog(`Check Error: ${e.message}`);
+                                allowed.push({
+                                    ...item,
+                                    weight: 1.0,
+                                    volume: 0.01
+                                });
+                            }
+                        }
+
+                        // Process allowed items first (add to cart)
+                        let successCount = 0;
+                        let failCount = 0;
+
+                        if (allowed.length > 0) {
+                            // API Integration: Add items one by one
+                            for (const item of allowed) {
+                                try {
+                                    const quantity = parseInt(item.quantity || item.cantidad, 10) || 1;
+                                    const itemTitle = item.title || item.product_name;
+                                    const itemPrice = item.price || item.product_price;
+                                    const itemImage = item.image || item.product_image;
+                                    const itemUrl = item.url || item.product_url;
+
+                                    // Construct product object for API
+                                    const productObj = {
+                                        product_name: itemTitle,
+                                        product_price: itemPrice,
+                                        product_image: itemImage,
+                                        product_url: itemUrl || url,
+                                        source: item.provider ? item.provider.toLowerCase() : 'external',
+                                        asin: item.asin || (item.sku !== 'N/A' ? item.sku : item.id),
+                                        color: item.color || '',
+                                        talla: item.talla || item.size || ''
+                                    };
+
+                                    addLog(`Sending: ${(itemTitle || 'Unknown').substring(0, 20)}...`);
+                                    console.log(`[WebView] Sending payload:`, JSON.stringify(productObj, null, 2));
+                                    const response = await api.addToMobileCart(productObj, quantity);
+
+                                    if (response.success) {
+                                        addLog(`API Success!`, 'success');
+                                        successCount++;
+                                    } else {
+                                        const errorMsg = response.error?.message || JSON.stringify(response.error) || 'Unknown error';
+                                        addLog(`API Error: ${errorMsg}`, 'error');
+                                        console.error(`Failed to add item: ${itemTitle || item.title || 'Unknown'}`, response.error);
+                                        failCount++;
+                                    }
+                                } catch (err) {
+                                    const errStr = err.message || JSON.stringify(err);
+                                    addLog(`Try/Catch Error: ${errStr}`, 'error');
+                                    console.error(`Error adding item: ${itemTitle || item.title || 'Unknown'}`, JSON.stringify(err, Object.getOwnPropertyNames(err)));
                                     failCount++;
                                 }
-                            } catch (err) {
-                                const errStr = err.message || JSON.stringify(err);
-                                addLog(`Try/Catch Error: ${errStr}`, 'error');
-                                console.error(`Error adding item: ${itemTitle || item.title || 'Unknown'}`, JSON.stringify(err, Object.getOwnPropertyNames(err)));
-                                failCount++;
+                            }
+
+                            // Refresh cart context
+                            if (fetchCart) {
+                                addLog('Refreshing Cart...');
+                                await fetchCart();
                             }
                         }
 
-                        // Refresh cart context
-                        if (fetchCart) {
-                            addLog('Refreshing Cart...');
-                            await fetchCart();
-                        }
-                    }
-
-                    // Prepare success alert config
-                    const successAlertConfig = {
-                        title: successCount > 0 ? '¡Listo!' : 'Hubo un problema',
-                        message: successCount > 0
-                            ? `Hemos agregado ${successCount} producto(s) a tu carrito de Mamá SAN correctamente.`
-                            : 'No pudimos agregar los productos. Por favor intenta de nuevo.',
-                        type: successCount > 0 ? 'success' : 'danger',
-                        buttons: [
-                            {
-                                text: 'Seguir Comprando',
-                                style: 'cancel',
-                                onPress: () => closeAlert()
-                            },
-                            {
-                                text: 'Ir al Carrito',
-                                style: 'default',
-                                onPress: () => {
-                                    closeAlert();
-                                    navigation.navigate('Main', { screen: 'Cart' });
+                        // Prepare success alert config
+                        const successAlertConfig = {
+                            title: successCount > 0 ? '¡Listo!' : 'Hubo un problema',
+                            message: successCount > 0
+                                ? `Hemos agregado ${successCount} producto(s) a tu carrito de Mamá SAN correctamente.`
+                                : 'No pudimos agregar los productos. Por favor intenta de nuevo.',
+                            type: successCount > 0 ? 'success' : 'danger',
+                            buttons: [
+                                {
+                                    text: 'Seguir Comprando',
+                                    style: 'cancel',
+                                    onPress: () => closeAlert()
+                                },
+                                {
+                                    text: 'Ir al Carrito',
+                                    style: 'default',
+                                    onPress: () => {
+                                        closeAlert();
+                                        navigation.navigate('Main', { screen: 'Cart' });
+                                    }
                                 }
+                            ]
+                        };
+
+                        // Flow: If prohibited items exist, show them FIRST
+                        if (prohibited.length > 0) {
+                            setProhibitedItems(prohibited);
+                            // If we also added items, save the success alert for later
+                            if (allowed.length > 0) {
+                                setPendingSuccessAlert(successAlertConfig);
                             }
-                        ]
+                            setIsLoadingExtraction(false); // Dismiss loading before showing popup
+                            setShowProhibitedModal(true);
+                        } else if (allowed.length > 0) {
+                            // No prohibited items, show success alert directly
+                            setIsLoadingExtraction(false); // Dismiss loading before showing popup
+                            setAlertConfig(successAlertConfig);
+                            setAlertVisible(true);
+                        } else {
+                            // No items at all
+                            setIsLoadingExtraction(false);
+                        }
                     };
 
-                    // Flow: If prohibited items exist, show them FIRST
-                    if (prohibited.length > 0) {
-                        setProhibitedItems(prohibited);
-                        // If we also added items, save the success alert for later
-                        if (allowed.length > 0) {
-                            setPendingSuccessAlert(successAlertConfig);
-                        }
-                        setIsLoadingExtraction(false); // Dismiss loading before showing popup
-                        setShowProhibitedModal(true);
-                    } else if (allowed.length > 0) {
-                        // No prohibited items, show success alert directly
-                        setIsLoadingExtraction(false); // Dismiss loading before showing popup
-                        setAlertConfig(successAlertConfig);
-                        setAlertVisible(true);
-                    } else {
-                        // No items at all
-                        setIsLoadingExtraction(false);
-                    }
-                };
-
-                // Always add items to cart (merge mode)
-                processMerge(false);
+                    // Always add items to cart (merge mode)
+                    processMerge(false);
+                }); // End InteractionManager.runAfterInteractions
             } else if (data.type === 'ERROR') {
                 addLog(`Error: ${data.message}`);
-                setIsLoadingExtraction(false);
+                if (isMountedRef.current) setIsLoadingExtraction(false);
                 setAlertConfig({
                     title: 'Aviso',
                     message: data.message,
                     type: 'sad',
                     buttons: [{ text: 'OK', onPress: closeAlert }]
                 });
-                setAlertVisible(true);
+                if (isMountedRef.current) setAlertVisible(true);
             }
         } catch (error) {
             addLog(`Parse Error: ${error.message}`);
-            setIsLoadingExtraction(false);
+            if (isMountedRef.current) setIsLoadingExtraction(false);
         }
     };
 
@@ -417,6 +448,7 @@ const WebViewScreen = ({ route, navigation }) => {
 
             // Safety Timeout - increased to 15s for slower connections/pages
             setTimeout(() => {
+                if (!isMountedRef.current) return; // Prevent state update if unmounted
                 setIsLoadingExtraction((prev) => {
                     if (prev) {
                         addLog('Timeout: No response in 15s');
