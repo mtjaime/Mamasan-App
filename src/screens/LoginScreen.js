@@ -119,8 +119,8 @@ const LoginScreen = ({ navigation }) => {
             } else if (error.code === statusCodes?.PLAY_SERVICES_NOT_AVAILABLE) {
                 showAlert('Error', 'Google Play Services no disponible');
             } else {
-                // Friendly error message for users
-                showAlert('Error', 'No se pudo iniciar sesión con Google. Por favor intenta con otro método de inicio de sesión.');
+                // Show actual error message for debugging (App Store requirement)
+                showAlert('Error Google Login', `No se pudo iniciar sesión: ${error.message} (Code: ${error.code})`);
             }
         } finally {
             setGoogleLoading(false);
@@ -149,7 +149,7 @@ const LoginScreen = ({ navigation }) => {
             if (error.code === 'ERR_REQUEST_CANCELED') {
                 // User cancelled - do nothing
             } else {
-                showAlert('Error', 'No se pudo iniciar sesión con Apple. Por favor intenta de nuevo.');
+                showAlert('Error Apple Login', `No se pudo iniciar sesión: ${error.message}`);
             }
         } finally {
             setAppleLoading(false);
@@ -295,8 +295,8 @@ const LoginScreen = ({ navigation }) => {
                         )}
                     </TouchableOpacity>
 
-                    {/* Google Sign-In button */}
-                    {isLogin && isGoogleSignInAvailable && (
+                    {/* Google Sign-In button - Visible for Login AND Sign Up */}
+                    {isGoogleSignInAvailable && (
                         <TouchableOpacity
                             style={[styles.button, styles.googleButton]}
                             onPress={handleGoogleLogin}
@@ -308,8 +308,8 @@ const LoginScreen = ({ navigation }) => {
                         </TouchableOpacity>
                     )}
 
-                    {/* Apple Sign-In button */}
-                    {isLogin && appleAuthAvailable && (
+                    {/* Apple Sign-In button - Visible for Login AND Sign Up */}
+                    {appleAuthAvailable && (
                         <View style={styles.appleButtonContainer}>
                             <AppleAuthentication.AppleAuthenticationButton
                                 buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}

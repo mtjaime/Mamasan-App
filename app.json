@@ -19,7 +19,7 @@
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "Mama SAN necesita acceso a tu cámara para tomar fotos de comprobantes de pago cuando realices un abono a tu cuenta.",
-        "NSMicrophoneUsageDescription": "Mama SAN no utiliza el micrófono directamente. Este permiso es requerido por algunas bibliotecas de terceros utilizadas en la aplicación."
+        "NSMicrophoneUsageDescription": "Esta aplicación requiere acceso al micrófono para capturar audio al grabar videos de prueba de pago o soporte, si es necesario."
       }
     },
     "android": {
