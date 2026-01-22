@@ -1130,6 +1130,62 @@ const OrderDetailScreen = ({ route, navigation }) => {
                     </View>
                 </View>
             </Modal>
+
+            {/* Product Tracking Modal */}
+            <Modal
+                visible={showTrackingModal}
+                transparent={true}
+                animationType="slide"
+                onRequestClose={() => setShowTrackingModal(false)}
+            >
+                <View style={styles.trackingModalOverlay}>
+                    <View style={styles.trackingModalContainer}>
+                        {/* Header */}
+                        <View style={styles.trackingModalHeader}>
+                            <Text style={styles.trackingModalTitle}>Estado del Producto</Text>
+                            <TouchableOpacity
+                                style={styles.trackingModalCloseButton}
+                                onPress={() => setShowTrackingModal(false)}
+                            >
+                                <Ionicons name="close" size={24} color="#757575" />
+                            </TouchableOpacity>
+                        </View>
+
+                        {/* Product Info */}
+                        {selectedItemForTracking && (
+                            <View style={styles.trackingProductInfo}>
+                                <Image
+                                    source={{ uri: selectedItemForTracking.imagen || 'https://via.placeholder.com/60' }}
+                                    style={styles.trackingProductImage}
+                                />
+                                <View style={styles.trackingProductDetails}>
+                                    <Text style={styles.trackingProductName} numberOfLines={2}>
+                                        {selectedItemForTracking.descripcion}
+                                    </Text>
+                                    <Text style={styles.trackingProductQty}>
+                                        Cantidad: {selectedItemForTracking.cantidad}
+                                    </Text>
+                                </View>
+                            </View>
+                        )}
+
+                        {/* Timeline */}
+                        <View style={styles.trackingTimelineContainer}>
+                            <ProductTimeline
+                                estatusShipping={selectedItemForTracking?.estatus_shipping || selectedItemForTracking?.estado_compra || 'Sin asignar'}
+                            />
+                        </View>
+
+                        {/* Close Button */}
+                        <TouchableOpacity
+                            style={styles.trackingCloseFullButton}
+                            onPress={() => setShowTrackingModal(false)}
+                        >
+                            <Text style={styles.trackingCloseFullButtonText}>Cerrar</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
         </View>
     );
 };
@@ -1975,6 +2031,67 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: '#333',
         fontWeight: '500',
+    },
+    trackingModalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        justifyContent: 'flex-end',
+    },
+    trackingModalContainer: {
+        backgroundColor: '#FFFFFF',
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+        padding: 20,
+        paddingBottom: 30,
+        maxHeight: '80%',
+    },
+    trackingModalCloseButton: {
+        padding: 4,
+    },
+    trackingProductInfo: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#F8F9FA',
+        borderRadius: 12,
+        padding: 12,
+        marginBottom: 20,
+    },
+    trackingProductImage: {
+        width: 60,
+        height: 60,
+        borderRadius: 8,
+        backgroundColor: '#E0E0E0',
+    },
+    trackingProductDetails: {
+        flex: 1,
+        marginLeft: 12,
+    },
+    trackingProductName: {
+        fontSize: 14,
+        color: '#333',
+        fontWeight: '500',
+        marginBottom: 4,
+    },
+    trackingProductQty: {
+        fontSize: 12,
+        color: '#757575',
+    },
+    trackingTimelineContainer: {
+        backgroundColor: '#FFFFFF',
+        borderRadius: 12,
+        paddingVertical: 8,
+        marginBottom: 20,
+    },
+    trackingCloseFullButton: {
+        backgroundColor: '#FF007F',
+        borderRadius: 12,
+        paddingVertical: 14,
+        alignItems: 'center',
+    },
+    trackingCloseFullButtonText: {
+        color: '#FFFFFF',
+        fontSize: 16,
+        fontWeight: '600',
     },
 });
 

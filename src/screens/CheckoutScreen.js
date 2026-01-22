@@ -92,6 +92,18 @@ const CheckoutScreen = ({ navigation }) => {
         ? searchOffices(officeSearchQuery)
         : zoomOffices;
 
+    // Search state for Location Modals
+    const [stateSearchQuery, setStateSearchQuery] = useState('');
+    const [citySearchQuery, setCitySearchQuery] = useState('');
+
+    const filteredStates = states.filter(state =>
+        state.toLowerCase().includes(stateSearchQuery.toLowerCase())
+    );
+
+    const filteredCities = availableCities.filter(city =>
+        city.ciudad.toLowerCase().includes(citySearchQuery.toLowerCase())
+    );
+
     const fetchCities = async () => {
         setIsLoadingCities(true);
         try {
@@ -420,7 +432,7 @@ const CheckoutScreen = ({ navigation }) => {
                 </View>
             ) : (
                 <>
-                    <ScrollView contentContainerStyle={styles.content}>
+                    <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
                         <Text style={styles.sectionTitle}>Dirección de Envío</Text>
 
                         {/* Delivery Options Tabs */}
@@ -664,7 +676,7 @@ const CheckoutScreen = ({ navigation }) => {
                             </TouchableOpacity>
                         </View>
 
-                        <ScrollView style={styles.formContainer}>
+                        <ScrollView style={styles.formContainer} nestedScrollEnabled={true} keyboardShouldPersistTaps="handled">
                             {addresses.map((addr) => (
                                 <TouchableOpacity
                                     key={addr.id_direccion}
@@ -689,7 +701,7 @@ const CheckoutScreen = ({ navigation }) => {
                 </View>
             </Modal>
 
-            {/* Add Address Modal */}
+            {/* Add Address Modal with INTERNAL Pickers to avoid iOS Native Modal conflicts */}
             <Modal
                 visible={showAddAddressModal}
                 animationType="slide"
@@ -705,7 +717,7 @@ const CheckoutScreen = ({ navigation }) => {
                             </TouchableOpacity>
                         </View>
 
-                        <ScrollView style={styles.formContainer}>
+                        <ScrollView style={styles.formContainer} nestedScrollEnabled={true} keyboardShouldPersistTaps="handled">
                             <Text style={styles.label}>Nombre (ej: Casa, Oficina) *</Text>
                             <TextInput
                                 style={styles.input}
@@ -815,115 +827,159 @@ const CheckoutScreen = ({ navigation }) => {
                             <View style={{ height: 40 }} />
                         </ScrollView>
                     </View>
-                </View>
-            </Modal>
 
-            {/* Phone Prefix Selection Modal */}
-            <Modal
-                visible={showPhonePrefixModal}
-                animationType="slide"
-                transparent={true}
-                onRequestClose={() => setShowPhonePrefixModal(false)}
-            >
-                <View style={styles.modalOverlay}>
-                    <View style={styles.modalContent}>
-                        <View style={styles.modalHeader}>
-                            <Text style={styles.modalTitle}>Seleccionar Prefijo</Text>
-                            <TouchableOpacity onPress={() => setShowPhonePrefixModal(false)}>
-                                <Ionicons name="close" size={24} color="#333" />
-                            </TouchableOpacity>
-                        </View>
-                        <ScrollView style={styles.formContainer}>
-                            {['412', '414', '424', '416', '426', '422'].map((prefix) => (
-                                <TouchableOpacity
-                                    key={prefix}
-                                    style={styles.selectionItem}
-                                    onPress={() => {
-                                        setPhonePrefix(prefix);
-                                        setShowPhonePrefixModal(false);
-                                    }}
-                                >
-                                    <Text style={styles.selectionItemText}>{prefix}</Text>
-                                    {phonePrefix === prefix && (
-                                        <Ionicons name="checkmark" size={20} color="#FF007F" />
-                                    )}
-                                </TouchableOpacity>
-                            ))}
-                        </ScrollView>
-                    </View>
-                </View>
-            </Modal>
-            {/* State Selection Modal */}
-            <Modal
-                visible={showStateModal}
-                animationType="slide"
-                transparent={true}
-                onRequestClose={() => setShowStateModal(false)}
-            >
-                <View style={styles.modalOverlay}>
-                    <View style={styles.modalContent}>
-                        <View style={styles.modalHeader}>
-                            <Text style={styles.modalTitle}>Seleccionar Estado</Text>
-                            <TouchableOpacity onPress={() => setShowStateModal(false)}>
-                                <Ionicons name="close" size={24} color="#333" />
-                            </TouchableOpacity>
-                        </View>
-                        {isLoadingCities ? (
-                            <ActivityIndicator size="large" color="#FF007F" />
-                        ) : (
-                            <ScrollView style={styles.formContainer}>
-                                {states.map((state) => (
-                                    <TouchableOpacity
-                                        key={state}
-                                        style={styles.selectionItem}
-                                        onPress={() => handleStateSelect(state)}
-                                    >
-                                        <Text style={styles.selectionItemText}>{state}</Text>
-                                        {newAddress.estado === state && (
-                                            <Ionicons name="checkmark" size={20} color="#FF007F" />
-                                        )}
+                    {/* INTERNAL PHONE PREFIX MODAL (Absolute View) */}
+                    {showPhonePrefixModal && (
+                        <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }]}>
+                            <View style={{ backgroundColor: 'white', width: '80%', maxHeight: '60%', borderRadius: 20, padding: 20 }}>
+                                <View style={styles.modalHeader}>
+                                    <Text style={styles.modalTitle}>Seleccionar Prefijo</Text>
+                                    <TouchableOpacity onPress={() => setShowPhonePrefixModal(false)}>
+                                        <Ionicons name="close" size={24} color="#333" />
                                     </TouchableOpacity>
-                                ))}
-                            </ScrollView>
-                        )}
-                    </View>
-                </View>
-            </Modal>
-
-            {/* City Selection Modal */}
-            <Modal
-                visible={showCityModal}
-                animationType="slide"
-                transparent={true}
-                onRequestClose={() => setShowCityModal(false)}
-            >
-                <View style={styles.modalOverlay}>
-                    <View style={styles.modalContent}>
-                        <View style={styles.modalHeader}>
-                            <Text style={styles.modalTitle}>Seleccionar Ciudad</Text>
-                            <TouchableOpacity onPress={() => setShowCityModal(false)}>
-                                <Ionicons name="close" size={24} color="#333" />
-                            </TouchableOpacity>
+                                </View>
+                                <ScrollView style={{ width: '100%' }}>
+                                    {['412', '414', '424', '416', '426', '422'].map((prefix) => (
+                                        <TouchableOpacity
+                                            key={prefix}
+                                            style={styles.selectionItem}
+                                            onPress={() => {
+                                                setPhonePrefix(prefix);
+                                                setShowPhonePrefixModal(false);
+                                            }}
+                                        >
+                                            <Text style={styles.selectionItemText}>{prefix}</Text>
+                                            {phonePrefix === prefix && (
+                                                <Ionicons name="checkmark" size={20} color="#FF007F" />
+                                            )}
+                                        </TouchableOpacity>
+                                    ))}
+                                </ScrollView>
+                            </View>
                         </View>
-                        <ScrollView style={styles.formContainer}>
-                            {availableCities.map((city) => (
-                                <TouchableOpacity
-                                    key={city.id}
-                                    style={styles.selectionItem}
-                                    onPress={() => handleCitySelect(city)}
-                                >
-                                    <Text style={styles.selectionItemText}>{city.ciudad}</Text>
-                                    {newAddress.ciudad === city.ciudad && (
-                                        <Ionicons name="checkmark" size={20} color="#FF007F" />
+                    )}
+
+                    {/* INTERNAL STATE MODAL (Absolute View) */}
+                    {showStateModal && (
+                        <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end', zIndex: 1000 }]}>
+                            <View style={{ backgroundColor: 'white', borderTopLeftRadius: 20, borderTopRightRadius: 20, height: '90%', padding: 20 }}>
+                                <View style={styles.modalHeader}>
+                                    <Text style={styles.modalTitle}>Seleccionar Estado</Text>
+                                    <TouchableOpacity onPress={() => setShowStateModal(false)}>
+                                        <Ionicons name="close" size={24} color="#333" />
+                                    </TouchableOpacity>
+                                </View>
+
+                                {/* State Search Bar */}
+                                <View style={styles.searchContainer}>
+                                    <Ionicons name="search" size={20} color="#999" />
+                                    <TextInput
+                                        style={styles.searchInput}
+                                        placeholder="Buscar estado..."
+                                        value={stateSearchQuery}
+                                        onChangeText={setStateSearchQuery}
+                                        placeholderTextColor="#999"
+                                    />
+                                    {stateSearchQuery.length > 0 && (
+                                        <TouchableOpacity onPress={() => setStateSearchQuery('')}>
+                                            <Ionicons name="close-circle" size={20} color="#999" />
+                                        </TouchableOpacity>
                                     )}
-                                </TouchableOpacity>
-                            ))}
-                        </ScrollView>
-                    </View>
+                                </View>
+
+                                {isLoadingCities ? (
+                                    <ActivityIndicator size="large" color="#FF007F" />
+                                ) : (
+                                    <ScrollView
+                                        style={styles.formContainer}
+                                        contentContainerStyle={{ paddingBottom: 50 }}
+                                        showsVerticalScrollIndicator={true}
+                                        nestedScrollEnabled={true}
+                                        keyboardShouldPersistTaps="handled"
+                                    >
+                                        {filteredStates.map((state) => (
+                                            <TouchableOpacity
+                                                key={state}
+                                                style={styles.selectionItem}
+                                                onPress={() => handleStateSelect(state)}
+                                            >
+                                                <Text style={styles.selectionItemText}>{state}</Text>
+                                                {newAddress.estado === state && (
+                                                    <Ionicons name="checkmark" size={20} color="#FF007F" />
+                                                )}
+                                            </TouchableOpacity>
+                                        ))}
+                                        {filteredStates.length === 0 && (
+                                            <View style={styles.emptyContainer}>
+                                                <Text style={styles.emptyText}>No se encontraron estados</Text>
+                                            </View>
+                                        )}
+                                    </ScrollView>
+                                )}
+                            </View>
+                        </View>
+                    )}
+
+                    {/* INTERNAL CITY MODAL (Absolute View) */}
+                    {showCityModal && (
+                        <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end', zIndex: 1000 }]}>
+                            <View style={{ backgroundColor: 'white', borderTopLeftRadius: 20, borderTopRightRadius: 20, height: '90%', padding: 20 }}>
+                                <View style={styles.modalHeader}>
+                                    <Text style={styles.modalTitle}>Seleccionar Ciudad</Text>
+                                    <TouchableOpacity onPress={() => setShowCityModal(false)}>
+                                        <Ionicons name="close" size={24} color="#333" />
+                                    </TouchableOpacity>
+                                </View>
+
+                                {/* City Search Bar */}
+                                <View style={styles.searchContainer}>
+                                    <Ionicons name="search" size={20} color="#999" />
+                                    <TextInput
+                                        style={styles.searchInput}
+                                        placeholder="Buscar ciudad..."
+                                        value={citySearchQuery}
+                                        onChangeText={setCitySearchQuery}
+                                        placeholderTextColor="#999"
+                                    />
+                                    {citySearchQuery.length > 0 && (
+                                        <TouchableOpacity onPress={() => setCitySearchQuery('')}>
+                                            <Ionicons name="close-circle" size={20} color="#999" />
+                                        </TouchableOpacity>
+                                    )}
+                                </View>
+
+                                <ScrollView
+                                    style={styles.formContainer}
+                                    contentContainerStyle={{ paddingBottom: 50 }}
+                                    showsVerticalScrollIndicator={true}
+                                    nestedScrollEnabled={true}
+                                    keyboardShouldPersistTaps="handled"
+                                >
+                                    {filteredCities.map((city) => (
+                                        <TouchableOpacity
+                                            key={city.id}
+                                            style={styles.selectionItem}
+                                            onPress={() => handleCitySelect(city)}
+                                        >
+                                            <Text style={styles.selectionItemText}>{city.ciudad}</Text>
+                                            {newAddress.ciudad === city.ciudad && (
+                                                <Ionicons name="checkmark" size={20} color="#FF007F" />
+                                            )}
+                                        </TouchableOpacity>
+                                    ))}
+                                    {filteredCities.length === 0 && (
+                                        <View style={styles.emptyContainer}>
+                                            <Text style={styles.emptyText}>No se encontraron ciudades</Text>
+                                        </View>
+                                    )}
+                                </ScrollView>
+                            </View>
+                        </View>
+                    )}
                 </View>
             </Modal>
 
-            {/* Zoom Office Selection Modal */}
+            {/* Zoom Office Selection Modal - Main Level */}
             <Modal
                 visible={showZoomOfficeModal}
                 animationType="slide"
@@ -976,7 +1032,7 @@ const CheckoutScreen = ({ navigation }) => {
                                 <Text style={styles.emptyText}>No se encontraron oficinas</Text>
                             </View>
                         ) : (
-                            <ScrollView style={styles.formContainer}>
+                            <ScrollView style={styles.formContainer} nestedScrollEnabled={true} keyboardShouldPersistTaps="handled">
                                 {filteredZoomOffices.map((office) => (
                                     <TouchableOpacity
                                         key={office.id}

@@ -34,7 +34,7 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.mamasan.app",
-      "versionCode": 15
+      "versionCode": 10
     },
     "web": {
       "favicon": "./assets/favicon.png"

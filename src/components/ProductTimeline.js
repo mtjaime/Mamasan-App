@@ -2,58 +2,69 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-// Tracking states in order
+// Tracking states in order based on estatus_shipping equivalences
+// Note: "Extraviado" is only shown if the product is actually lost
 const TRACKING_STATES = [
-    { key: 'ordered', label: 'Ordenado', icon: 'cart' },
-    { key: 'purchased', label: 'Comprado', icon: 'bag-check' },
-    { key: 'in_transit_usa', label: 'En tránsito USA', icon: 'airplane' },
-    { key: 'warehouse', label: 'En almacén', icon: 'cube' },
-    { key: 'shipping_vzla', label: 'Envío a Venezuela', icon: 'boat' },
-    { key: 'delivered', label: 'Entregado', icon: 'checkmark-circle' },
+    { key: 'ordenado', label: 'Ordenado', icon: 'cart', apiValues: ['sin asignar'] },
+    { key: 'comprado', label: 'Comprado', icon: 'bag-check', apiValues: ['estado inicial'] },
+    { key: 'enviado_proveedor', label: 'Enviado Proveedor', icon: 'airplane', apiValues: ['enviado proveedor'] },
+    { key: 'recibido_miami', label: 'Recibido Miami', icon: 'business', apiValues: ['recibido miami'] },
+    { key: 'en_transito_ccs', label: 'En tránsito CCS', icon: 'boat', apiValues: ['en tránsito ccs'] },
+    { key: 'recibido_ccs', label: 'Recibido Ccs', icon: 'cube', apiValues: ['recibido ccs'] },
+    { key: 'por_entregar', label: 'Por entregar', icon: 'bicycle', apiValues: ['entregar ccs', 'entregar int.'] },
+    { key: 'entregado', label: 'Entregado', icon: 'checkmark-circle', apiValues: ['entregado'] },
 ];
 
-// Map estado_compra to tracking step index
-const getTrackingStep = (estado) => {
-    const statusLower = estado?.toLowerCase() || '';
+// Special state for lost items
+const EXTRAVIADO_STATE = { key: 'extraviado', label: 'Extraviado', icon: 'alert-circle', apiValues: ['extraviado ve', 'extraviado us'] };
 
-    if (statusLower.includes('entregado') || statusLower.includes('completado')) {
-        return 5; // delivered
-    } else if (statusLower.includes('envío venezuela') || statusLower.includes('en camino')) {
-        return 4; // shipping_vzla
-    } else if (statusLower.includes('almacén') || statusLower.includes('warehouse')) {
-        return 3; // warehouse
-    } else if (statusLower.includes('tránsito') || statusLower.includes('transit')) {
-        return 2; // in_transit_usa
-    } else if (statusLower.includes('comprado') || statusLower.includes('purchased')) {
-        return 1; // purchased
-    } else if (statusLower.includes('ordenado') || statusLower.includes('orden confirmada') || statusLower.includes('validacion')) {
-        return 0; // ordered
+// Map estatus_shipping to tracking step index
+const getTrackingStep = (estatusShipping) => {
+    const statusLower = (estatusShipping || '').toLowerCase().trim();
+
+    // Check for extraviado first
+    if (EXTRAVIADO_STATE.apiValues.some(v => statusLower.includes(v.toLowerCase()))) {
+        return { step: -1, isExtraviado: true }; // Special case for lost items
     }
-    return 0; // default to ordered
+
+    // Find matching step
+    for (let i = TRACKING_STATES.length - 1; i >= 0; i--) {
+        if (TRACKING_STATES[i].apiValues.some(v => statusLower.includes(v.toLowerCase()))) {
+            return { step: i, isExtraviado: false };
+        }
+    }
+
+    // Default to first step if no match
+    return { step: 0, isExtraviado: false };
 };
 
-const ProductTimeline = ({ estado, compact = false }) => {
-    const currentStep = getTrackingStep(estado);
+const ProductTimeline = ({ estatusShipping, compact = false }) => {
+    const { step: currentStep, isExtraviado } = getTrackingStep(estatusShipping);
 
     if (compact) {
         // Compact inline version
+        const states = isExtraviado ? [...TRACKING_STATES, EXTRAVIADO_STATE] : TRACKING_STATES;
+        const displayStep = isExtraviado ? states.length - 1 : currentStep;
+
         return (
             <View style={styles.compactContainer}>
-                {TRACKING_STATES.map((state, index) => {
-                    const isCompleted = index <= currentStep;
-                    const isCurrent = index === currentStep;
+                {states.map((state, index) => {
+                    const isCompleted = index <= displayStep;
+                    const isCurrent = index === displayStep;
+                    const isLost = state.key === 'extraviado';
 
                     return (
                         <React.Fragment key={state.key}>
                             <View style={[
                                 styles.compactDot,
-                                isCompleted && styles.compactDotActive,
-                                isCurrent && styles.compactDotCurrent
+                                isCompleted && !isLost && styles.compactDotActive,
+                                isCurrent && !isLost && styles.compactDotCurrent,
+                                isLost && styles.compactDotLost
                             ]} />
-                            {index < TRACKING_STATES.length - 1 && (
+                            {index < states.length - 1 && (
                                 <View style={[
                                     styles.compactLine,
-                                    index < currentStep && styles.compactLineActive
+                                    index < displayStep && styles.compactLineActive
                                 ]} />
                             )}
                         </React.Fragment>
@@ -64,12 +75,16 @@ const ProductTimeline = ({ estado, compact = false }) => {
     }
 
     // Full version with labels
+    const states = isExtraviado ? [...TRACKING_STATES, EXTRAVIADO_STATE] : TRACKING_STATES;
+    const displayStep = isExtraviado ? states.length - 1 : currentStep;
+
     return (
         <View style={styles.container}>
             <View style={styles.stepsContainer}>
-                {TRACKING_STATES.map((state, index) => {
-                    const isCompleted = index <= currentStep;
-                    const isCurrent = index === currentStep;
+                {states.map((state, index) => {
+                    const isCompleted = index <= displayStep;
+                    const isCurrent = index === displayStep;
+                    const isLost = state.key === 'extraviado';
 
                     return (
                         <View key={state.key} style={styles.stepWrapper}>
@@ -77,7 +92,8 @@ const ProductTimeline = ({ estado, compact = false }) => {
                             {index > 0 && (
                                 <View style={[
                                     styles.connectorLine,
-                                    index <= currentStep && styles.connectorLineActive
+                                    index <= displayStep && !isLost && styles.connectorLineActive,
+                                    isLost && styles.connectorLineLost
                                 ]} />
                             )}
 
@@ -85,25 +101,30 @@ const ProductTimeline = ({ estado, compact = false }) => {
                             <View style={styles.stepRow}>
                                 <View style={[
                                     styles.stepCircle,
-                                    isCompleted && styles.stepCircleCompleted,
-                                    isCurrent && styles.stepCircleCurrent
+                                    isCompleted && !isLost && styles.stepCircleCompleted,
+                                    isCurrent && !isLost && styles.stepCircleCurrent,
+                                    isLost && styles.stepCircleLost
                                 ]}>
                                     <Ionicons
                                         name={isCompleted ? state.icon : `${state.icon}-outline`}
                                         size={16}
-                                        color={isCompleted ? '#FFFFFF' : '#BDBDBD'}
+                                        color={isCompleted || isLost ? '#FFFFFF' : '#BDBDBD'}
                                     />
                                 </View>
                                 <View style={styles.stepContent}>
                                     <Text style={[
                                         styles.stepLabel,
-                                        isCompleted && styles.stepLabelCompleted,
-                                        isCurrent && styles.stepLabelCurrent
+                                        isCompleted && !isLost && styles.stepLabelCompleted,
+                                        isCurrent && !isLost && styles.stepLabelCurrent,
+                                        isLost && styles.stepLabelLost
                                     ]}>
                                         {state.label}
                                     </Text>
                                     {isCurrent && (
-                                        <Text style={styles.currentBadge}>Actual</Text>
+                                        <Text style={[
+                                            styles.currentBadge,
+                                            isLost && styles.currentBadgeLost
+                                        ]}>Actual</Text>
                                     )}
                                 </View>
                             </View>
@@ -140,6 +161,12 @@ const styles = StyleSheet.create({
         height: 12,
         borderRadius: 6,
     },
+    compactDotLost: {
+        backgroundColor: '#F44336',
+        width: 12,
+        height: 12,
+        borderRadius: 6,
+    },
     compactLine: {
         flex: 1,
         height: 2,
@@ -171,6 +198,9 @@ const styles = StyleSheet.create({
     connectorLineActive: {
         backgroundColor: '#4CAF50',
     },
+    connectorLineLost: {
+        backgroundColor: '#F44336',
+    },
     stepRow: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -195,6 +225,11 @@ const styles = StyleSheet.create({
         borderColor: '#FF007F',
         transform: [{ scale: 1.1 }],
     },
+    stepCircleLost: {
+        backgroundColor: '#F44336',
+        borderColor: '#F44336',
+        transform: [{ scale: 1.1 }],
+    },
     stepContent: {
         flex: 1,
         flexDirection: 'row',
@@ -212,6 +247,10 @@ const styles = StyleSheet.create({
         color: '#FF007F',
         fontWeight: '600',
     },
+    stepLabelLost: {
+        color: '#F44336',
+        fontWeight: '600',
+    },
     currentBadge: {
         marginLeft: 8,
         fontSize: 10,
@@ -221,6 +260,9 @@ const styles = StyleSheet.create({
         paddingVertical: 2,
         borderRadius: 4,
         overflow: 'hidden',
+    },
+    currentBadgeLost: {
+        backgroundColor: '#F44336',
     },
 });
 

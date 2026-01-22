@@ -361,7 +361,7 @@ const HomeScreen = ({ navigation }) => {
                 {/* Header */}
                 <View style={styles.headerContainer}>
                     <View>
-                        <Text style={styles.welcomeText}>Bienvenida de nuevo,</Text>
+                        <Text style={styles.welcomeText}>Bienvenid@ de nuevo,</Text>
                         <Text style={styles.userName}>Hola{displayName ? `, ${displayName}` : ''}</Text>
                     </View>
                     {/* Contenedor de íconos del header */}
@@ -769,12 +769,13 @@ const OffersCarousel = () => {
     const slides = [
         {
             id: 1,
-            title: "Gift Card de $10",
-            subtitle: "¡Descuento en tu primer envío!",
+            titleMain: "20%",
+            titleSecondary: " de descuento en el envío de tus primeras 3 compras",
+            subtitle: null,
             footnote: "*Ciertas condiciones aplican",
             colors: ['#FF007F', '#FF5C8D'],
             iconName: 'gift', // Ionicons
-            tag: "Bienvenida"
+            tag: "Bienvenid@"
         }
     ];
 
@@ -801,8 +802,15 @@ const OffersCarousel = () => {
                     <View style={styles.tagContainer}>
                         <Text style={styles.tagText}>{slide.tag}</Text>
                     </View>
-                    <Text style={styles.slideTitle}>{slide.title}</Text>
-                    <Text style={styles.slideSubtitle}>{slide.subtitle}</Text>
+                    {slide.titleMain ? (
+                        <Text style={styles.slideTitle}>
+                            <Text style={{ fontSize: 44, fontWeight: '900' }}>{slide.titleMain}</Text>
+                            <Text style={{ fontSize: 22, fontWeight: '500' }}>{slide.titleSecondary}</Text>
+                        </Text>
+                    ) : (
+                        <Text style={styles.slideTitle}>{slide.title}</Text>
+                    )}
+                    {slide.subtitle && <Text style={styles.slideSubtitle}>{slide.subtitle}</Text>}
                     {slide.footnote && (
                         <Text style={styles.slideFootnote}>{slide.footnote}</Text>
                     )}
@@ -843,7 +851,7 @@ const styles = StyleSheet.create({
         backgroundColor: '#fff',
     },
     scrollContent: {
-        paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 24) + 10 : 20,
+        paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 24) + 10 : 60,
         paddingBottom: 100,
     },
     headerContainer: {
@@ -1143,7 +1151,7 @@ const styles = StyleSheet.create({
     },
     carouselWrapper: {
         width: '100%',
-        height: 192, // h-48
+        height: 220, // Increased height
         borderRadius: 24,
         overflow: 'hidden',
         shadowColor: '#7B1FA2',
@@ -1178,11 +1186,11 @@ const styles = StyleSheet.create({
         textTransform: 'uppercase',
     },
     slideTitle: {
-        fontSize: 28, // text-3xl approx
+        fontSize: 28,
         fontWeight: 'bold',
         color: 'white',
-        marginBottom: 4,
-        lineHeight: 32,
+        marginBottom: 8,
+        lineHeight: 38, // Increased line height
     },
     slideSubtitle: {
         color: 'rgba(255,255,255,0.9)',

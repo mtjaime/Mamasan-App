@@ -51,6 +51,10 @@ const PaymentConfirmationScreen = ({ navigation, route }) => {
     const [selectedPaymentTypeData, setSelectedPaymentTypeData] = useState(null);
     const [selectedBank, setSelectedBank] = useState(null);
 
+    // Modals for iOS compatibility
+    const [showPaymentTypeModal, setShowPaymentTypeModal] = useState(false);
+    const [showBankModal, setShowBankModal] = useState(false);
+
     // Dynamic payment amount from API - use the correct amount based on currency
     // Initialize with paymentAmount which already contains the correct value for the selected currency
     const [displayAmount, setDisplayAmount] = useState(
@@ -528,7 +532,7 @@ const PaymentConfirmationScreen = ({ navigation, route }) => {
                 <View style={{ width: 24 }} />
             </View>
 
-            <ScrollView contentContainerStyle={styles.content}>
+            <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
                 {/* Amount to pay */}
                 <View style={styles.amountCard}>
                     <Text style={styles.amountLabel}>Monto a pagar</Text>
@@ -549,19 +553,15 @@ const PaymentConfirmationScreen = ({ navigation, route }) => {
                 {/* Payment Type Selector */}
                 <Text style={styles.sectionTitle}>Tipo de Pago</Text>
                 <View style={styles.pickerContainer}>
-                    <Picker
-                        selectedValue={selectedPaymentType}
-                        onValueChange={(value) => setSelectedPaymentType(value)}
-                        style={styles.picker}
+                    <TouchableOpacity
+                        style={styles.pickerButton}
+                        onPress={() => setShowPaymentTypeModal(true)}
                     >
-                        {paymentMethods.map((method) => (
-                            <Picker.Item
-                                key={method.id}
-                                label={method.tipo_pago}
-                                value={method.id}
-                            />
-                        ))}
-                    </Picker>
+                        <Text style={styles.pickerButtonText}>
+                            {paymentMethods.find(m => m.id === selectedPaymentType)?.tipo_pago || 'Seleccionar método de pago'}
+                        </Text>
+                        <Ionicons name="chevron-down" size={20} color="#666" />
+                    </TouchableOpacity>
                 </View>
 
                 {/* Payment Instructions */}
@@ -626,19 +626,15 @@ const PaymentConfirmationScreen = ({ navigation, route }) => {
                             {currency === 'usd' ? 'Banco desde donde transferiste' : 'Banco desde donde pagaste'}
                         </Text>
                         <View style={styles.pickerContainer}>
-                            <Picker
-                                selectedValue={sourceBank}
-                                onValueChange={(value) => setSourceBank(value)}
-                                style={styles.picker}
+                            <TouchableOpacity
+                                style={styles.pickerButton}
+                                onPress={() => setShowBankModal(true)}
                             >
-                                {banks.map((bank) => (
-                                    <Picker.Item
-                                        key={bank.id}
-                                        label={bank.nombre}
-                                        value={bank.id}
-                                    />
-                                ))}
-                            </Picker>
+                                <Text style={styles.pickerButtonText}>
+                                    {banks.find(b => b.id === sourceBank)?.nombre || 'Seleccionar banco'}
+                                </Text>
+                                <Ionicons name="chevron-down" size={20} color="#666" />
+                            </TouchableOpacity>
                         </View>
                     </>
                 )}
@@ -732,6 +728,78 @@ const PaymentConfirmationScreen = ({ navigation, route }) => {
                     </View>
                 </View>
             </Modal>
+
+            {/* Payment Type Selection Modal */}
+            <Modal
+                visible={showPaymentTypeModal}
+                transparent={true}
+                animationType="slide"
+                onRequestClose={() => setShowPaymentTypeModal(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <View style={styles.modalHeader}>
+                            <Text style={styles.modalTitle}>Tipo de Pago</Text>
+                            <TouchableOpacity onPress={() => setShowPaymentTypeModal(false)}>
+                                <Ionicons name="close" size={24} color="#333" />
+                            </TouchableOpacity>
+                        </View>
+                        <ScrollView style={styles.modalList} keyboardShouldPersistTaps="handled">
+                            {paymentMethods.map((method) => (
+                                <TouchableOpacity
+                                    key={method.id}
+                                    style={styles.modalItem}
+                                    onPress={() => {
+                                        setSelectedPaymentType(method.id);
+                                        setShowPaymentTypeModal(false);
+                                    }}
+                                >
+                                    <Text style={styles.modalItemText}>{method.tipo_pago}</Text>
+                                    {selectedPaymentType === method.id && (
+                                        <Ionicons name="checkmark" size={20} color="#FF007F" />
+                                    )}
+                                </TouchableOpacity>
+                            ))}
+                        </ScrollView>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Bank Selection Modal */}
+            <Modal
+                visible={showBankModal}
+                transparent={true}
+                animationType="slide"
+                onRequestClose={() => setShowBankModal(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <View style={styles.modalHeader}>
+                            <Text style={styles.modalTitle}>Seleccionar Banco</Text>
+                            <TouchableOpacity onPress={() => setShowBankModal(false)}>
+                                <Ionicons name="close" size={24} color="#333" />
+                            </TouchableOpacity>
+                        </View>
+                        <ScrollView style={styles.modalList} keyboardShouldPersistTaps="handled">
+                            {banks.map((bank) => (
+                                <TouchableOpacity
+                                    key={bank.id}
+                                    style={styles.modalItem}
+                                    onPress={() => {
+                                        setSourceBank(bank.id);
+                                        setShowBankModal(false);
+                                    }}
+                                >
+                                    <Text style={styles.modalItemText}>{bank.nombre}</Text>
+                                    {sourceBank === bank.id && (
+                                        <Ionicons name="checkmark" size={20} color="#FF007F" />
+                                    )}
+                                </TouchableOpacity>
+                            ))}
+                        </ScrollView>
+                    </View>
+                </View>
+            </Modal>
         </SafeAreaView>
     );
 };
@@ -814,6 +882,59 @@ const styles = StyleSheet.create({
     },
     picker: {
         height: 50,
+    },
+    pickerButton: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: 15,
+        height: 50,
+    },
+    pickerButtonText: {
+        fontSize: 16,
+        color: '#333',
+    },
+    // Modal Styles
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'flex-end',
+    },
+    modalContent: {
+        backgroundColor: '#fff',
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
+        maxHeight: '70%',
+        padding: 20,
+    },
+    modalHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 15,
+        paddingBottom: 15,
+        borderBottomWidth: 1,
+        borderBottomColor: '#eee',
+    },
+    modalTitle: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        color: '#333',
+    },
+    modalList: {
+        marginBottom: 20,
+    },
+    modalItem: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingVertical: 15,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f0f0f0',
+    },
+    modalItemText: {
+        fontSize: 16,
+        color: '#333',
     },
     instructionsCard: {
         backgroundColor: '#FFF5F8',
