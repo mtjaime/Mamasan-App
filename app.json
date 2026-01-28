@@ -49,7 +49,9 @@
       ],
       "expo-font",
       "@react-native-google-signin/google-signin",
-      "expo-apple-authentication"
+      "expo-apple-authentication",
+      "./plugins/withAndroidFeatures",
+      "./plugins/withProguardRules"
     ],
     "extra": {
       "eas": {
